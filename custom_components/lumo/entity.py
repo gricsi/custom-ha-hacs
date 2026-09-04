@@ -403,6 +403,15 @@ class LumoBaseLLMEntity(Entity):
 
             if self._cached_formatted_tools:
                 model_args["tools"] = self._cached_formatted_tools
+            else:
+                # Core builds Assist's control tools from the set of exposed
+                # domains, so with nothing exposed the model is handed no tools
+                # at all and answers "I can't control your devices" from general
+                # knowledge. That reads as a broken integration, so say why.
+                LOGGER.warning(
+                    "Lumo has an LLM API attached but no tools to call, so it cannot control "
+                    "anything. Expose entities under Settings > Voice assistants > Expose."
+                )
 
         perf.checkpoint(f"Format tools ({len(model_args.get('tools', []))} tools)")
 

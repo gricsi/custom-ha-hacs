@@ -32,10 +32,14 @@ _LOGGER = logging.getLogger(__name__)
 LLM_API_FLEX_ASSIST = "flex_assist"
 LLM_API_FLEX_ASSIST_NAME = "Lumo Assist API"
 
-# Dropped because this integration supplies entity state through its own
-# entities_prompt template instead. Core prefixes platform tools with their
-# domain (homeassistant__get_home_state), so match on the unprefixed suffix.
-EXCLUDED_TOOLS = {"get_home_state"}
+# Tool names to withhold from the model, matched on the unprefixed suffix since
+# core namespaces platform tools as <domain>__<tool>.
+#
+# Upstream OmniConv dropped get_home_state here, because this integration feeds
+# entity state in through its own entities_prompt template. That tool no longer
+# exists: core replaced it with homeassistant__GetLiveContext, which is kept,
+# because a live lookup is still worth having when the cached prompt is stale.
+EXCLUDED_TOOLS: set[str] = set()
 
 
 class FlexAssistAPI(API):

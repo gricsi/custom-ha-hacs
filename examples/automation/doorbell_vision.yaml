@@ -1,0 +1,49 @@
+# Snapshot the doorbell camera and have Lumo describe who is there.
+#
+# Both Lumo models advertise vision, and image input is confirmed working
+# against the API. This is the strongest genuinely-AI automation available:
+# a rule cannot tell you "two people, one holding a parcel".
+#
+# Paste into: Settings -> Automations -> Create -> three-dot menu -> Edit in YAML
+
+alias: Describe who is at the door
+description: Sends a one-line description of whoever rang the doorbell.
+mode: single
+
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.doorbell
+    to: "on"
+
+conditions: []
+
+actions:
+  # Written under /config/www so it is reachable as media-source local media.
+  - action: camera.snapshot
+    target:
+      entity_id: camera.front_door
+    data:
+      filename: /config/www/doorbell.jpg
+
+  # Give the file a moment to land before reading it back.
+  - delay: "00:00:02"
+
+  - action: ai_task.generate_data
+    data:
+      task_name: doorbell
+      entity_id: ai_task.lumo_ai_task
+      instructions: >-
+        Describe in one short sentence who is at the door: how many people,
+        what they are wearing, and whether they are carrying anything.
+        If nobody is visible, reply exactly "Nobody visible".
+      # attachments is a list -- the service uses a media selector with
+      # multiple: true, so a bare mapping is rejected.
+      attachments:
+        - media_content_id: media-source://media_source/local/doorbell.jpg
+          media_content_type: image/jpeg
+    response_variable: seen
+
+  - action: notify.persistent_notification
+    data:
+      title: Doorbell
+      message: "{{ seen.data }}"

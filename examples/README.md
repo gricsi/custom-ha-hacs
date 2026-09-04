@@ -1,6 +1,22 @@
 # Examples
 
-Drop-in **functions** (tools the model may call) and **prompts** for the Lumo conversation agent.
+## Where does each example go?
+
+Three kinds of example, three different destinations. Putting one in the wrong place is the most
+common mistake:
+
+| Kind | Looks like | Paste it into |
+| --- | --- | --- |
+| **Function** (`function/`) | a YAML **list**, starting `- spec:` | Lumo Conversation service → gear → **Functions** box |
+| **Prompt** (`prompt/`) | plain English | Lumo Conversation service → gear → **Instructions** box |
+| **Automation** (`automation/`) | a YAML **mapping**, starting `alias:` | Settings → Automations → Create → **Edit in YAML** |
+
+> **`Message malformed: not a valid option at '['0']'`**
+>
+> You pasted a function definition (or `configuration.yaml`-style automation) into the automation
+> editor. The editor wants a single mapping — `alias:` / `triggers:` / `actions:` — and reports
+> `['0']` because it found a list instead. Functions belong in the Functions box, not here. See
+> [automation/README.md](automation/) for the format the editor accepts.
 
 ## How to install a function
 
@@ -34,6 +50,16 @@ asks what devices exist, or asks you to design or improve a dashboard" gets call
 | --- | --- |
 | [dashboard_designer](prompt/dashboard_designer/) | Turns the agent into a Lovelace author that emits YAML you can paste |
 | [smart_home_manager](prompt/smart_home_manager/) | A terser, action-biased everyday assistant |
+
+## Automations
+
+Paste these into the automation editor, not the Functions box. See [automation/](automation/).
+
+| Example | What it does |
+| --- | --- |
+| [sunset_shutter](automation/sunset_shutter.yaml) | Close a cover at sunset — no AI, deliberately |
+| [doorbell_vision](automation/doorbell_vision.yaml) | Camera snapshot → Lumo describes who is at the door |
+| [daily_digest](automation/daily_digest.yaml) | Evening summary written by Lumo |
 
 ## A note on cost and context
 

@@ -1,0 +1,37 @@
+# An evening summary written by Lumo.
+#
+# The trigger and the data gathering are plain Home Assistant; only the wording
+# is delegated. That split is the point -- the schedule stays reliable, and the
+# model does the one thing a template cannot do well, which is write readable
+# prose about whatever happened to be true today.
+#
+# Paste into: Settings -> Automations -> Create -> three-dot menu -> Edit in YAML
+
+alias: Evening home digest
+description: Asks Lumo to summarise the day and pushes it as a notification.
+mode: single
+
+triggers:
+  - trigger: time
+    at: "21:00:00"
+
+conditions: []
+
+actions:
+  - action: lumo.generate_content
+    data:
+      # Settings -> Devices & Services -> Lumo -> three-dot menu on the entry
+      # -> the id is the last path segment of the URL.
+      config_entry: REPLACE_WITH_YOUR_CONFIG_ENTRY_ID
+      prompt: >-
+        Write a two-sentence, friendly evening summary of this home.
+        Indoor temperature {{ states('sensor.indoor_temperature') }}°C,
+        outdoor {{ states('sensor.outdoor_temperature') }}°C,
+        energy used today {{ states('sensor.energy_today') }} kWh.
+        Mention anything that looks unusual. Do not greet me or sign off.
+    response_variable: digest
+
+  - action: notify.persistent_notification
+    data:
+      title: Evening digest
+      message: "{{ digest.text }}"

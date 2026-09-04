@@ -1,0 +1,24 @@
+# Close a cover at sunset.
+#
+# Deliberately contains no AI at all. A fixed schedule with a fixed action is a
+# job for a plain automation: it runs offline, costs nothing, and cannot pick
+# the wrong entity. Routing it through a language model would only add latency
+# and failure modes.
+#
+# Paste into: Settings -> Automations -> Create -> three-dot menu -> Edit in YAML
+
+alias: Close rolling shutter at sunset
+description: Closes the shutter 15 minutes before sunset.
+mode: single
+
+triggers:
+  - trigger: sun
+    event: sunset
+    offset: "-00:15:00"
+
+conditions: []
+
+actions:
+  - action: cover.close_cover
+    target:
+      entity_id: cover.rolling_shutter

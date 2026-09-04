@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_API_KEY, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.typing import ConfigType
 
@@ -20,6 +21,7 @@ from .const import (
     DEFAULT_CONVERSATION_NAME,
     DEFAULT_NAME,
     DEFAULT_SKIP_AUTHENTICATION,
+    DOMAIN,
     LOGGER,
     RECOMMENDED_AI_TASK_OPTIONS,
     VALIDATION_CHAT_MODEL,
@@ -28,6 +30,10 @@ from .api import async_setup_api
 from .services import async_setup_services
 
 PLATFORMS = (Platform.AI_TASK, Platform.CONVERSATION)
+
+# async_setup only registers the lumo.generate_content action; everything else
+# is configured through config entries, so there is no YAML schema to accept.
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 type LumoConfigEntry = ConfigEntry[openai.AsyncClient]
 

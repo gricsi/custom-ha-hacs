@@ -149,7 +149,7 @@
   },
   "exceptions": {
     "invalid_config_entry": {
-      "message": "Invalid configuration entry '{config_entry}'"
+      "message": "Invalid configuration entry {config_entry}"
     }
   }
 }

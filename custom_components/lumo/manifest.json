@@ -1,14 +1,30 @@
 {
   "domain": "lumo",
   "name": "Lumo",
-  "after_dependencies": ["assist_pipeline", "intent"],
-  "codeowners": ["@gricsi"],
+  "after_dependencies": [
+    "assist_pipeline",
+    "intent"
+  ],
+  "codeowners": [
+    "@gricsi"
+  ],
   "config_flow": true,
-  "dependencies": ["conversation", "energy", "history", "recorder", "rest", "scrape"],
+  "dependencies": [
+    "conversation",
+    "energy",
+    "history",
+    "llm",
+    "recorder",
+    "rest",
+    "scrape"
+  ],
   "documentation": "https://github.com/gricsi/custom-ha-hacs",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/gricsi/custom-ha-hacs/issues",
-  "requirements": ["openai==2.45.0", "orjson>=3.10.12"],
+  "requirements": [
+    "openai==2.45.0",
+    "orjson>=3.10.12"
+  ],
   "version": "0.1.0"
 }

@@ -18,6 +18,13 @@ common mistake:
 > `['0']` because it found a list instead. Functions belong in the Functions box, not here. See
 > [automation/README.md](automation/) for the format the editor accepts.
 
+## More examples elsewhere
+
+This fork kept OmniConv's function executor system unchanged, so the ~22 function specs shipped by
+OmniConv and extended_openai_conversation work here **verbatim** — shopping list, calendar, weather,
+notify, TTS, web search and more. See [UPSTREAM.md](UPSTREAM.md) for a curated list, the two that
+need an edit first, and external projects (LLM Vision, ha-ai-memory) that can point at Lumo.
+
 ## How to install a function
 
 Settings → Devices & Services → **Lumo** → your *Lumo Conversation* service → gear icon →

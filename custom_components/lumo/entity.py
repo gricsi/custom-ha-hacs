@@ -40,7 +40,15 @@ from openai.types.chat import (
     ChatCompletionToolMessageParam,
     ChatCompletionUserMessageParam,
 )
-from voluptuous_openapi import convert
+try:
+    # Home Assistant core ships probatio (an install_requires of the
+    # homeassistant package itself) and core's own openai_conversation uses it
+    # to turn a voluptuous tool schema into JSON Schema. voluptuous-openapi,
+    # which upstream OmniConv imports, is not installed by core or by any core
+    # integration -- importing it is what breaks the config flow on 2026.x.
+    from probatio import to_openapi as _to_openapi
+except ImportError:  # pragma: no cover - older Home Assistant
+    from voluptuous_openapi import convert as _to_openapi
 
 from .const import (
     CONF_CHAT_MODEL,
@@ -154,7 +162,7 @@ def _format_structured_output(schema: vol.Schema, llm_api: llm.APIInstance | Non
     strict decoding, so rewriting optional properties into required nullable ones
     (as upstream OmniConv does) only makes the model emit nulls.
     """
-    return convert(
+    return _to_openapi(
         schema,
         custom_serializer=(llm_api.custom_serializer if llm_api else llm.selector_serializer),
     )
@@ -174,7 +182,7 @@ def _format_tool(
         function={
             "name": tool.name,
             "description": tool.description or "",
-            "parameters": convert(tool.parameters, custom_serializer=custom_serializer),
+            "parameters": _to_openapi(tool.parameters, custom_serializer=custom_serializer),
         },
     )
 

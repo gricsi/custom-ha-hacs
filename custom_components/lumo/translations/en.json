@@ -1,0 +1,155 @@
+{
+  "config": {
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+      "unknown": "[%key:common::config_flow::error::unknown%]",
+      "key_not_accepted": "Lumo did not recognise this API key and answered anonymously instead of rejecting it. Check the key on the Manage keys page, or clear the field to use the anonymous tier deliberately."
+    },
+    "step": {
+      "user": {
+        "title": "Connect to Lumo",
+        "data": {
+          "api_key": "[%key:common::config_flow::data::api_key%]",
+          "base_url": "Base URL",
+          "skip_authentication": "Skip API authentication"
+        },
+        "data_description": {
+          "api_key": "Your Lumo API key from the Manage keys page at lumo.proton.me. Optional: Lumo also answers unauthenticated requests, on a lower quota.",
+          "base_url": "The Lumo API endpoint. Change this only if Proton moves the path, or to point the integration at another OpenAI-compatible server.",
+          "skip_authentication": "Skip the reachability and API-key check during setup. Useful if the endpoint is temporarily unreachable."
+        }
+      }
+    }
+  },
+  "config_subentries": {
+    "conversation": {
+      "initiate_flow": {
+        "user": "Add conversation agent",
+        "reconfigure": "Reconfigure conversation agent"
+      },
+      "entry_type": "Conversation agent",
+      "abort": {
+        "entry_not_loaded": "Cannot add things while the configuration is disabled."
+      },
+      "step": {
+        "init": {
+          "data": {
+            "name": "Name",
+            "prompt": "Instructions",
+            "entities_prompt": "Exposed entities template",
+            "llm_hass_api": "Home Assistant API",
+            "recommended": "Use recommended model settings",
+            "performance_tracing": "Log timing breakdown"
+          },
+          "data_description": {
+            "prompt": "Instruct how the LLM should respond. This can be a template.",
+            "entities_prompt": "Template rendering the exposed entities that are handed to the model on every turn.",
+            "performance_tracing": "Write a per-stage timing breakdown to the log. Diagnostics only."
+          }
+        },
+        "advanced": {
+          "title": "Advanced settings",
+          "data": {
+            "chat_model": "Model",
+            "max_tokens": "Maximum tokens to return in response",
+            "temperature": "Temperature",
+            "top_p": "Top P",
+            "reasoning_effort": "Reasoning effort"
+          },
+          "data_description": {
+            "chat_model": "Fetched live from the Lumo API. Note that Lumo silently falls back to lumo-lite for an unknown model id rather than reporting an error.",
+            "max_tokens": "Maximum number of tokens the model may generate in one response. Too low a value truncates answers mid-sentence.",
+            "temperature": "Controls creativity vs. focus. 0.3 is the documented API default and suits device control; /models separately reports 1.0 as the models' own default.",
+            "top_p": "Alternative to temperature. Controls token selection by probability mass.",
+            "reasoning_effort": "How much thinking the model does before answering. Higher settings cost latency."
+          }
+        },
+        "model": {
+          "title": "Functions and context",
+          "data": {
+            "functions": "Functions",
+            "max_function_calls_per_conversation": "Maximum function calls per conversation",
+            "attach_username": "Attach username to message",
+            "context_threshold": "Context threshold",
+            "context_truncate_strategy": "Context truncation strategy when exceeding threshold"
+          },
+          "data_description": {
+            "functions": "Tools the model may call, in OmniConv's YAML function format.",
+            "max_function_calls_per_conversation": "Limits how many times the model can use tools in one turn.",
+            "attach_username": "Include the requesting Home Assistant username in the prompt.",
+            "context_threshold": "Maximum number of tokens to keep in the conversation history before shortening it.",
+            "context_truncate_strategy": "Method used to shorten conversation history when it exceeds the threshold."
+          }
+        }
+      }
+    },
+    "ai_task_data": {
+      "initiate_flow": {
+        "user": "Add AI task service",
+        "reconfigure": "Reconfigure AI task service"
+      },
+      "entry_type": "AI task service",
+      "abort": {
+        "entry_not_loaded": "Cannot add things while the configuration is disabled."
+      },
+      "step": {
+        "init": {
+          "data": {
+            "name": "Name",
+            "recommended": "Use recommended model settings",
+            "performance_tracing": "Log timing breakdown"
+          }
+        },
+        "advanced": {
+          "title": "Advanced settings",
+          "data": {
+            "chat_model": "Model",
+            "max_tokens": "Maximum tokens to return in response",
+            "temperature": "Temperature",
+            "top_p": "Top P",
+            "reasoning_effort": "Reasoning effort"
+          },
+          "data_description": {
+            "temperature": "Controls creativity vs. focus. 0.3 is the documented API default and suits device control; /models separately reports 1.0 as the models' own default."
+          }
+        }
+      }
+    }
+  },
+  "selector": {
+    "reasoning_effort": {
+      "options": {
+        "none": "None",
+        "medium": "Medium",
+        "high": "High",
+        "max": "Maximum"
+      }
+    }
+  },
+  "services": {
+    "generate_content": {
+      "name": "Generate content",
+      "description": "Send a prompt to Lumo and get a response",
+      "fields": {
+        "config_entry": {
+          "name": "Config entry",
+          "description": "The config entry to use for this action"
+        },
+        "prompt": {
+          "name": "Prompt",
+          "description": "The prompt to send to Lumo"
+        },
+        "filenames": {
+          "name": "Files",
+          "description": "Images to include in the request. Lumo has no document input, so only images are accepted."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "invalid_config_entry": {
+      "message": "Invalid configuration entry '{config_entry}'"
+    }
+  }
+}

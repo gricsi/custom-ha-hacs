@@ -1,0 +1,19 @@
+generate_content:
+  fields:
+    config_entry:
+      required: true
+      selector:
+        config_entry:
+          integration: lumo
+    prompt:
+      required: true
+      selector:
+        text:
+          multiline: true
+      example: "Summarise today's energy usage."
+    filenames:
+      selector:
+        text:
+          multiline: true
+      example: |
+        - /config/www/snapshot.jpg

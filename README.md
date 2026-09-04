@@ -100,8 +100,7 @@ subentry-based conversation/AI-task configuration model.
   harmless rather than a 400.
 - Attachments are images only. There is no document/file content part on `chat/completions`.
 
-## Before you publish this repo
+## Install via HACS
 
-`manifest.json` and this README point at `https://github.com/rgasztany/ha-lumo`. Update
-`documentation`, `issue_tracker`, and `codeowners` if you push it somewhere else — hassfest checks
-that those URLs resolve.
+HACS → three-dot menu → **Custom repositories** → URL `https://github.com/gricsi/custom-ha-hacs`,
+category **Integration** → Add. Then find **Lumo** in HACS, install, and restart Home Assistant.

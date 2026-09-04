@@ -5,6 +5,7 @@ A Home Assistant conversation agent and AI Task provider backed by [Proton Lumo]
 Forked from [mLupine/OmniConv](https://github.com/mLupine/OmniConv), which is itself a rebase of
 `extended_openai_conversation` onto the modern native Home Assistant integration. The fork exists
 because Lumo and OpenAI do not share a wire protocol — see [What changed](#what-changed-from-omniconv).
+Licensed MIT; see [NOTICE.md](NOTICE.md) for what is inherited from upstream and under what terms.
 
 > **Status: pre-GA.** The Lumo API is not publicly released. Model ids, quotas, and the endpoint path
 > may all move before launch. The base URL is an editable field precisely so a path change does not

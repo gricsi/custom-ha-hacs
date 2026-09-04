@@ -19,17 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-ATTRIBUTION AND PROVENANCE
-
-This project is a fork of OmniConv (https://github.com/mLupine/OmniConv),
-which is itself derived from extended_openai_conversation
-(https://github.com/jekalmin/extended_openai_conversation).
-
-At the time of forking, neither upstream project published a license file.
-The MIT grant above is offered by the copyright holder of this fork's own
-changes and cannot extend to the inherited upstream code, whose authors retain
-their rights. If you are an upstream author and want attribution changed or
-this fork taken down, please open an issue.

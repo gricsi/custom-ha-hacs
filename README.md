@@ -100,6 +100,13 @@ subentry-based conversation/AI-task configuration model.
   harmless rather than a 400.
 - Attachments are images only. There is no document/file content part on `chat/completions`.
 
+## Examples
+
+Ready-made functions and prompts live in [`examples/`](examples/) — a home-inventory tool that lets
+the agent give advice about the devices you actually own, richer light control, named scene modes,
+recorder history lookups, and prompts that turn the agent into a dashboard designer or a terse
+everyday assistant.
+
 ## Install via HACS
 
 HACS → three-dot menu → **Custom repositories** → URL `https://github.com/gricsi/custom-ha-hacs`,

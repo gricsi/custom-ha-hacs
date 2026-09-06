@@ -105,12 +105,18 @@ Do not execute services without user's confirmation.
 Do not restate or appreciate what user says, rather make a quick inquiry.
 """
 
+# state_attr() rather than states[...].attributes.options: only select-like
+# entities carry an "options" attribute, and attribute access on a state that
+# lacks it makes Home Assistant log a template warning *per entity, per render*.
+# With the 15 second background refresh that is hundreds of warnings a minute.
+# state_attr() returns None quietly instead. Joining with "/" also keeps a
+# multi-option list from injecting commas into the CSV, as aliases already do.
 DEFAULT_ENTITIES_PROMPT = """Available Devices:
 ```csv
 entity_id,name,area_name,state,state_options,aliases
 {% for entity in exposed_entities -%}
 {%   if states[entity.entity_id] -%}
-{{      entity.entity_id }},{{ entity.name }},{{area_name(entity.entity_id)}},{{ entity.state }},{{ states[entity.entity_id].attributes.options }},{{entity.aliases | join('/')}}
+{{      entity.entity_id }},{{ entity.name }},{{area_name(entity.entity_id)}},{{ entity.state }},{{ (state_attr(entity.entity_id, 'options') or []) | join('/') }},{{entity.aliases | join('/')}}
 {%   endif -%}
 {% endfor -%}
 ```

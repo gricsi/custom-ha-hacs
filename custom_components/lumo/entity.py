@@ -484,6 +484,36 @@ class LumoBaseLLMEntity(Entity):
                 perf.checkpoint("No more tool calls, conversation complete")
                 break
 
+        if chat_log.unresponded_tool_results:
+            # The loop ran out of iterations with a tool result as the last entry.
+            # Home Assistant requires the log to end on assistant content and
+            # otherwise fails the turn with "Last content in chat log is not an
+            # AssistantContent", which tells the user nothing. Usually this means
+            # a tool kept failing and the model kept retrying it, so ask once more
+            # with tools withheld to force a plain-text answer.
+            LOGGER.warning(
+                "Lumo still wanted to call tools after %s iterations. Retrying once with tools "
+                "disabled so the turn can finish; check the log above for a failing tool",
+                MAX_TOOL_ITERATIONS,
+            )
+            final_args = {k: v for k, v in model_args.items() if k != "tools"}
+            try:
+                stream = await client.chat.completions.create(**final_args)
+                async for _content in chat_log.async_add_delta_content_stream(
+                    self.entity_id, _transform_stream(chat_log, stream)
+                ):
+                    pass
+            except openai.APIStatusError as err:
+                raise HomeAssistantError(f"Error talking to Lumo: {lumo_error_detail(err)}") from err
+            except openai.OpenAIError as err:
+                raise HomeAssistantError("Error talking to Lumo") from err
+
+            if chat_log.unresponded_tool_results:
+                raise HomeAssistantError(
+                    "Lumo did not produce an answer: it kept requesting tools that never satisfied "
+                    "it. The most likely cause is a custom function raising an error on every call."
+                )
+
         perf.summary()
 
 

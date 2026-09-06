@@ -1,7 +1,9 @@
 """Conversation support for Lumo."""
 
-import yaml
+from collections.abc import Callable
 from typing import Literal
+
+import yaml
 
 from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigSubentry
@@ -25,13 +27,23 @@ from .entity import LumoBaseLLMEntity
 class CustomFunctionTool(llm.Tool):
     """Tool for executing custom functions defined in the configuration."""
 
-    def __init__(self, function_spec: dict, function_impl: dict) -> None:
+    def __init__(
+        self,
+        function_spec: dict,
+        function_impl: dict,
+        get_user_input: Callable[[], conversation.ConversationInput | None] | None = None,
+    ) -> None:
         """Initialize the tool with function specification and implementation."""
         self.name = function_spec["name"]
         self.description = function_spec.get("description", f"Execute {self.name} function")
         self.parameters = {}
         self.function_impl = function_impl
         self.function_spec = function_spec
+        # The executors need the turn's ConversationInput -- script runs use its
+        # Context for attribution, and get_user_from_user_id reads its user_id.
+        # LLMContext no longer carries the user's prompt, so the entity hands us
+        # the real input instead of us rebuilding a fake one.
+        self._get_user_input = get_user_input
 
     async def async_call(
         self,
@@ -70,14 +82,18 @@ class CustomFunctionTool(llm.Tool):
                     }
                 )
 
-            user_input = conversation.ConversationInput(
-                text=llm_context.user_prompt or "",
-                conversation_id=tool_input.id,
-                language=llm_context.language,
-                context=llm_context.context,
-                device_id=llm_context.device_id,
-                agent_id=llm_context.assistant,
-            )
+            user_input = self._get_user_input() if self._get_user_input else None
+            if user_input is None:
+                # Fallback for a tool invoked outside a conversation turn.
+                user_input = conversation.ConversationInput(
+                    text="",
+                    conversation_id=tool_input.id,
+                    language=llm_context.language,
+                    context=llm_context.context,
+                    device_id=llm_context.device_id,
+                    satellite_id=None,
+                    agent_id=llm_context.assistant,
+                )
 
             result = await function_executor.execute(
                 hass,
@@ -131,6 +147,7 @@ class LumoEntity(
             self._attr_supported_features = conversation.ConversationEntityFeature.CONTROL
         self._cached_tools: list[CustomFunctionTool] | None = None
         self._cached_yaml_hash: int | None = None
+        self._current_user_input: conversation.ConversationInput | None = None
 
     def _get_custom_functions_as_tools(self) -> list[CustomFunctionTool]:
         """Get custom functions from configuration as Tools."""
@@ -157,6 +174,7 @@ class LumoEntity(
                     CustomFunctionTool(
                         function_spec=function["spec"],
                         function_impl=function["function"],
+                        get_user_input=lambda: self._current_user_input,
                     )
                 )
 
@@ -202,6 +220,7 @@ class LumoEntity(
 
         options = self.subentry.data
         perf_enabled = options.get(CONF_PERFORMANCE_TRACING, False)
+        self._current_user_input = user_input
 
         if perf_enabled:
             start_time = time.time()

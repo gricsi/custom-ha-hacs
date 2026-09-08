@@ -101,18 +101,32 @@ def _convert_to_template(settings, template_keys, hass, parents: list[str]):
             _convert_to_template(setting, template_keys, hass, parents)
 
 
+def _as_template(value: Any, hass: HomeAssistant) -> Template | None:
+    """Coerce a function-config value into a Template.
+
+    Function configs reach the executors straight from yaml.safe_load, so every
+    template key arrives as a plain string: nothing calls convert_to_template()
+    on them, and the voluptuous schemas that declare cv.template are only applied
+    to functions nested inside a `composite`. Rendering a str would raise
+    AttributeError, so coerce here instead.
+    """
+    if value is None or isinstance(value, Template):
+        return value
+    return Template(value, hass)
+
+
 def _get_rest_data(hass, rest_config, arguments):
     rest_config.setdefault(CONF_METHOD, rest.const.DEFAULT_METHOD)
     rest_config.setdefault(CONF_VERIFY_SSL, rest.const.DEFAULT_VERIFY_SSL)
     rest_config.setdefault(CONF_TIMEOUT, rest.data.DEFAULT_TIMEOUT)
     rest_config.setdefault(rest.const.CONF_ENCODING, rest.const.DEFAULT_ENCODING)
 
-    resource_template: Template | None = rest_config.get(CONF_RESOURCE_TEMPLATE)
+    resource_template = _as_template(rest_config.get(CONF_RESOURCE_TEMPLATE), hass)
     if resource_template is not None:
         rest_config.pop(CONF_RESOURCE_TEMPLATE)
         rest_config[CONF_RESOURCE] = resource_template.async_render(arguments, parse_result=False)
 
-    payload_template: Template | None = rest_config.get(CONF_PAYLOAD_TEMPLATE)
+    payload_template = _as_template(rest_config.get(CONF_PAYLOAD_TEMPLATE), hass)
     if payload_template is not None:
         rest_config.pop(CONF_PAYLOAD_TEMPLATE)
         rest_config[CONF_PAYLOAD] = payload_template.async_render(arguments, parse_result=False)
@@ -506,7 +520,7 @@ class RestFunctionExecutor(FunctionExecutor):
 
         await rest_data.async_update()
         value = rest_data.data_without_xml()
-        value_template = config.get(CONF_VALUE_TEMPLATE)
+        value_template = _as_template(config.get(CONF_VALUE_TEMPLATE), hass)
 
         if value is not None and value_template is not None:
             value = value_template.async_render_with_possible_json_value(value, None, arguments)
@@ -546,14 +560,14 @@ class ScrapeFunctionExecutor(FunctionExecutor):
         new_arguments = dict(arguments)
 
         for sensor_config in config["sensor"]:
-            name: Template = sensor_config.get(CONF_NAME)
-            value = self._async_update_from_rest_data(coordinator.data, sensor_config, arguments)
+            name = _as_template(sensor_config.get(CONF_NAME), hass)
+            value = self._async_update_from_rest_data(hass, coordinator.data, sensor_config, arguments)
             new_arguments["value"] = value
             if name:
                 new_arguments[name.async_render()] = value
 
         result = new_arguments["value"]
-        value_template = config.get(CONF_VALUE_TEMPLATE)
+        value_template = _as_template(config.get(CONF_VALUE_TEMPLATE), hass)
 
         if value_template is not None:
             result = value_template.async_render_with_possible_json_value(result, None, new_arguments)
@@ -562,13 +576,14 @@ class ScrapeFunctionExecutor(FunctionExecutor):
 
     def _async_update_from_rest_data(
         self,
+        hass: HomeAssistant,
         data: BeautifulSoup,
         sensor_config: dict[str, Any],
         arguments: dict[str, Any],
     ) -> None:
         """Update state from the rest data."""
         value = self._extract_value(data, sensor_config)
-        value_template = sensor_config.get(CONF_VALUE_TEMPLATE)
+        value_template = _as_template(sensor_config.get(CONF_VALUE_TEMPLATE), hass)
 
         if value_template is not None:
             value = value_template.async_render_with_possible_json_value(value, None, arguments)

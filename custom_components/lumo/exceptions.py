@@ -79,6 +79,20 @@ class NativeNotFound(HomeAssistantError):
         return f"native function '{self.name}' does not exist"
 
 
+class ConfigFileNotReadable(HomeAssistantError):
+    """When a config file outside the read allowlist is requested."""
+
+    def __init__(self, filename: object, allowed: list[str]) -> None:
+        """Initialize error."""
+        super().__init__(self, f"reading '{filename}' is not allowed")
+        self.filename = filename
+        self.allowed = allowed
+
+    def __str__(self) -> str:
+        """Return string representation."""
+        return f"reading '{self.filename}' is not allowed. Readable files are: {', '.join(self.allowed)}"
+
+
 class FunctionLoadFailed(HomeAssistantError):
     """When function load failed."""
 

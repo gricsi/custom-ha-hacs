@@ -43,6 +43,7 @@ from homeassistant.helpers.template import Template
 from .const import CONF_PAYLOAD_TEMPLATE, DOMAIN, EVENT_AUTOMATION_REGISTERED
 from .exceptions import (
     CallServiceError,
+    ConfigFileNotReadable,
     EntityNotExposed,
     EntityNotFound,
     FunctionNotFound,
@@ -51,6 +52,19 @@ from .exceptions import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Files `read_config` may read. Deliberately hardcoded rather than configurable: the config
+# directory also holds secrets.yaml and .storage/ (access tokens, every integration's
+# credentials), and anything read here is sent to Lumo as prompt context.
+READABLE_CONFIG_FILES = (
+    "configuration.yaml",
+    "automations.yaml",
+    "scripts.yaml",
+    "scenes.yaml",
+)
+
+# A long automations.yaml would swamp the context window, so truncate rather than fail.
+MAX_CONFIG_FILE_CHARS = 60000
 
 
 def get_function_executor(value: str):
@@ -161,6 +175,8 @@ class NativeFunctionExecutor(FunctionExecutor):
             return await self.execute_service_single(hass, function, arguments, user_input, exposed_entities)
         if name == "add_automation":
             return await self.add_automation(hass, function, arguments, user_input, exposed_entities)
+        if name == "read_config":
+            return await self.read_config(hass, function, arguments, user_input, exposed_entities)
         if name == "get_history":
             return await self.get_history(hass, function, arguments, user_input, exposed_entities)
         if name == "get_energy":
@@ -262,6 +278,50 @@ class NativeFunctionExecutor(FunctionExecutor):
             {"automation_config": config, "raw_config": raw_config},
         )
         return "Success"
+
+    async def read_config(
+        self,
+        hass: HomeAssistant,
+        function,
+        arguments,
+        user_input: conversation.ConversationInput,
+        exposed_entities,
+    ):
+        filename = arguments.get("filename")
+        if filename not in READABLE_CONFIG_FILES:
+            raise ConfigFileNotReadable(filename, list(READABLE_CONFIG_FILES))
+
+        config_dir = os.path.realpath(hass.config.config_dir)
+        path = os.path.join(config_dir, filename)
+
+        # An allowlisted name can still be a symlink aimed at secrets.yaml or somewhere outside the
+        # config directory, so require it to resolve to itself rather than merely land in-tree.
+        if os.path.realpath(path) != path:
+            raise ConfigFileNotReadable(filename, list(READABLE_CONFIG_FILES))
+
+        return await hass.async_add_executor_job(self._read_config_file, path, filename)
+
+    def _read_config_file(self, path: str, filename: str) -> dict[str, Any]:
+        """Read an allowlisted config file. Runs in the executor, since this blocks."""
+        if not os.path.isfile(path):
+            return {
+                "filename": filename,
+                "exists": False,
+                "truncated": False,
+                "content": "",
+            }
+
+        # errors="replace" because a config file written by an editor in a legacy encoding is
+        # common enough, and losing an accent beats failing the whole tool call.
+        with open(path, encoding="utf-8", errors="replace") as f:
+            content = f.read(MAX_CONFIG_FILE_CHARS + 1)
+
+        return {
+            "filename": filename,
+            "exists": True,
+            "truncated": len(content) > MAX_CONFIG_FILE_CHARS,
+            "content": content[:MAX_CONFIG_FILE_CHARS],
+        }
 
     async def get_history(
         self,

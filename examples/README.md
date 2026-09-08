@@ -50,6 +50,8 @@ asks what devices exist, or asks you to design or improve a dashboard" gets call
 | [scene_mode](function/scene_mode/) | `script` | "Movie mode", "good night" — multi-device scenes in one call |
 | [recent_activity](function/recent_activity/) | `sqlite` | "Why did the hallway light come on at 3am?" — reads recorder history |
 | [ask_user](function/ask_user/) | `script` | The agent can push a notification and ask a follow-up question |
+| [read_config](function/read_config/) | `native` | "Read my automations.yaml and suggest fixes" — read-only access to four config files |
+| [node_red_flows](function/node_red_flows/) | `rest` | "Which of my Node-RED nodes is never reached?" — reads flows over the add-on's admin API |
 
 ## Prompts
 

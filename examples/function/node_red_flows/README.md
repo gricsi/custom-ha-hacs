@@ -49,7 +49,7 @@ validates the port, the protocol, the credentials and the API in a single step.
     password: REPLACE_ME
     headers:
       Node-RED-API-Version: v2
-    value_template: >-
+    value_template: |-
       {%- set nodes = value_json.flows if value_json.flows is defined else value_json %}
       {%- if tab | default('', true) == '' %}
       {% for n in nodes if n.type == 'tab' %}{{ n.label }}
@@ -85,6 +85,12 @@ Scoping to one tab keeps a single call small enough to reason about.
 
 Keep `wires` and `id` if you edit this. Without them the model sees a bag of nodes with no topology,
 and the whole class of "this node is never reached" bugs becomes invisible.
+
+**`value_template` must be `|-`, not `>-`.** The folded style collapses every newline into a space,
+so the one-node-per-line output arrives as a single run-on line — and since flow tab names contain
+spaces, even the tab list becomes ambiguous. The literal style keeps the line breaks. This is the
+opposite of the [recent_activity](../recent_activity/) example, where `>-` is fine because SQL does
+not care about newlines.
 
 ## Notes
 

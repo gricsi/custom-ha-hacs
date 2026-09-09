@@ -93,6 +93,22 @@ class ConfigFileNotReadable(HomeAssistantError):
         return f"reading '{self.filename}' is not allowed. Readable files are: {', '.join(self.allowed)}"
 
 
+class ValueTemplateError(HomeAssistantError):
+    """When a function's value_template failed to render."""
+
+    def __init__(self, function_type: str) -> None:
+        """Initialize error."""
+        super().__init__(self, f"value_template of the {function_type} function failed to render")
+        self.function_type = function_type
+
+    def __str__(self) -> str:
+        """Return string representation."""
+        return (
+            f"value_template of the {self.function_type} function failed to render. Home Assistant"
+            " logged the underlying Jinja error as 'Error parsing value'"
+        )
+
+
 class FunctionLoadFailed(HomeAssistantError):
     """When function load failed."""
 

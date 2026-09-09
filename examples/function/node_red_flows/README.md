@@ -28,17 +28,22 @@ validates the port, the protocol, the credentials and the API in a single step.
 - spec:
     name: node_red_flows
     description: >-
-      Read the user's Node-RED flows. Called with no arguments it lists the flow tab names.
-      Called with a tab name it lists that tab's nodes: type, label, targeted entity, service
-      and function code. Use when the user asks what their Node-RED flows do, or asks you to
-      review or debug one. Always call it without arguments first to see the tab names, then
-      request one tab — never guess a tab name.
+      Read the user's Node-RED flows, in three widening steps. With no arguments it lists the
+      flow tab names. With `tab` it lists that tab's nodes: id, type, label, targeted entity,
+      service, conditions, wires, and function code truncated to 160 characters. With `node`
+      it dumps one node in full, including its complete function body. Use when the user asks
+      what their flows do, or asks you to review or debug one. Always start with no arguments
+      to learn the tab names — never guess one. Only reach for `node` when the truncated code
+      is not enough, and pass the id from a previous `tab` call.
     parameters:
       type: object
       properties:
         tab:
           type: string
-          description: Exact label of a flow tab, as returned by the no-argument call.
+          description: Label of a flow tab, as returned by the no-argument call.
+        node:
+          type: string
+          description: Id of a single node, as returned by a tab call. Overrides `tab`.
   function:
     type: rest
     resource: http://192.168.1.10:1880/flows   # your HA host's IP, not a container name
@@ -51,14 +56,19 @@ validates the port, the protocol, the credentials and the API in a single step.
       Node-RED-API-Version: v2
     value_template: |-
       {%- set nodes = value_json.flows if value_json.flows is defined else value_json %}
-      {%- if tab | default('', true) == '' %}
-      {% for n in nodes if n.type == 'tab' %}{{ n.label }}
+      {%- set want = (tab | default('', true)) | trim | lower %}
+      {%- set one = (node | default('', true)) | trim %}
+      {%- if one != '' %}
+      {% for n in nodes if n.id == one %}{% for k, v in n.items() if k not in ('x','y','info') %}{{ k }}: {{ v }}
+      {% endfor %}{% endfor %}
+      {%- elif want == '' %}
+      {% for n in nodes if n.type == 'tab' %}{{ n.label | trim }}
       {% endfor %}
       {%- else %}
       {%- set t = namespace(id='') %}
-      {%- for n in nodes if n.type == "tab" and n.label == tab %}{% set t.id = n.id %}{% endfor %}
-      {%- if t.id == "" %}No tab named "{{ tab }}". Call with no arguments to list the tab names.{% else %}
-      {% for n in nodes if n.z == t.id %}{{ n.id }} {{ n.type }} "{{ n.name | default(n.label, true) }}"{% if n.d %} DISABLED{% endif %}{% if n.action %} action={{ n.action }}{% endif %}{% if n.entityId %} entity={{ n.entityId | join(',') }}{% endif %}{% if n.entity_id %} entity={{ n.entity_id }}{% endif %}{% if n.data %} data={{ n.data }}{% endif %}{% if n.halt_if %} halt_if={{ n.halt_if_compare }} {{ n.halt_if }}{% endif %}{% if n.property %} prop={{ n.property }}{% endif %}{% if n.rules %} rules={{ n.rules }}{% endif %}{% if n.adr is defined %} modbus={{ n.dataType }} unit={{ n.unitid }} adr={{ n.adr }} qty={{ n.quantity }}{% endif %}{% if n.repeat %} repeat={{ n.repeat }}{% endif %}{% if n.func %} code={{ n.func | replace('\n','; ') }}{% endif %} wires={{ n.wires | default([], true) }}
+      {%- for n in nodes if n.type == 'tab' and (n.label | trim | lower) == want %}{% set t.id = n.id %}{% endfor %}
+      {%- if t.id == '' %}No tab named "{{ tab }}". Call with no arguments to list the tab names.{% else %}
+      {% for n in nodes if n.z == t.id %}{{ n.id }} {{ n.type }} "{{ n.name | default(n.label, true) }}"{% if n.d %} DISABLED{% endif %}{% if n.action %} action={{ n.action }}{% endif %}{% if n.entityId %} entity={{ n.entityId | join(',') }}{% endif %}{% if n.entity_id %} entity={{ n.entity_id }}{% endif %}{% if n.data %} data={{ n.data }}{% endif %}{% if n.halt_if %} halt_if={{ n.halt_if_compare }} {{ n.halt_if }}{% endif %}{% if n.property %} prop={{ n.property }}{% endif %}{% if n.rules %} rules={{ n.rules }}{% endif %}{% if n.adr is defined %} modbus={{ n.dataType }} unit={{ n.unitid }} adr={{ n.adr }} qty={{ n.quantity }}{% endif %}{% if n.func %} code={{ n.func | replace('\n', '; ') | truncate(160, true, ' …') }}{% endif %} wires={{ n.wires | default([], true) }}
       {% endfor %}
       {%- endif %}
       {%- endif %}
@@ -85,6 +95,17 @@ Scoping to one tab keeps a single call small enough to reason about.
 
 Keep `wires` and `id` if you edit this. Without them the model sees a bag of nodes with no topology,
 and the whole class of "this node is never reached" bugs becomes invisible.
+
+**Function code is truncated to 160 characters, and that is not cosmetic.** One 17-branch `if/else`
+in a `function` node is over a kilobyte, and the template puts it on a single line. A tab full of
+those produced a payload large enough to break the frontend: `SyntaxError: JSON Parse error:
+Unterminated string` out of `home-assistant-js-websocket`, i.e. the assistant's reply arrived at the
+browser cut off mid-string. The tab list was small enough to survive; the tab body was not. That is
+what the `node` parameter is for — get the shape from a `tab` call, then pull one node in full.
+
+**Tab lookup is trimmed and case-insensitive.** Node-RED happily stores a tab label with a trailing
+space, and one real install had exactly that (`"F-H emelet fürdő "`). A model naturally emits the
+name without it, so an `n.label == tab` comparison silently found nothing.
 
 **`value_template` must be `|-`, not `>-`.** The folded style collapses every newline into a space,
 so the one-node-per-line output arrives as a single run-on line — and since flow tab names contain

@@ -49,6 +49,7 @@ from .exceptions import (
     FunctionNotFound,
     InvalidFunction,
     NativeNotFound,
+    ValueTemplateError,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -113,6 +114,21 @@ def _as_template(value: Any, hass: HomeAssistant) -> Template | None:
     if value is None or isinstance(value, Template):
         return value
     return Template(value, hass)
+
+
+def _render_value_template(value_template: Template, value: Any, arguments, function_type: str) -> Any:
+    """Render a function's value_template against a response body.
+
+    Deliberately passes no error_value: supplying one makes Home Assistant
+    swallow the Jinja error *and* skip logging it, so a broken template fails
+    silently and leaves nothing in the log. Omitting it logs the real message
+    and hands the raw body back instead, which we detect by identity so a whole
+    HTTP response never reaches the model as if it were the rendered result.
+    """
+    rendered = value_template.async_render_with_possible_json_value(value, variables=arguments)
+    if rendered is value:
+        raise ValueTemplateError(function_type)
+    return rendered
 
 
 def _get_rest_data(hass, rest_config, arguments):
@@ -523,7 +539,7 @@ class RestFunctionExecutor(FunctionExecutor):
         value_template = _as_template(config.get(CONF_VALUE_TEMPLATE), hass)
 
         if value is not None and value_template is not None:
-            value = value_template.async_render_with_possible_json_value(value, None, arguments)
+            value = _render_value_template(value_template, value, arguments, "rest")
 
         return value
 
@@ -570,7 +586,7 @@ class ScrapeFunctionExecutor(FunctionExecutor):
         value_template = _as_template(config.get(CONF_VALUE_TEMPLATE), hass)
 
         if value_template is not None:
-            result = value_template.async_render_with_possible_json_value(result, None, new_arguments)
+            result = _render_value_template(value_template, result, new_arguments, "scrape")
 
         return result
 
@@ -586,7 +602,7 @@ class ScrapeFunctionExecutor(FunctionExecutor):
         value_template = _as_template(sensor_config.get(CONF_VALUE_TEMPLATE), hass)
 
         if value_template is not None:
-            value = value_template.async_render_with_possible_json_value(value, None, arguments)
+            value = _render_value_template(value_template, value, arguments, "scrape sensor")
 
         return value
 

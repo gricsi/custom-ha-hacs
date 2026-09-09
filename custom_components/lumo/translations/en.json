@@ -19,7 +19,24 @@
           "base_url": "The Lumo API endpoint. Change this only if Proton moves the path, or to point the integration at another OpenAI-compatible server.",
           "skip_authentication": "Skip the reachability and API-key check during setup. Useful if the endpoint is temporarily unreachable."
         }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Lumo",
+        "description": "Change the API key, endpoint or setup check. Clearing the API key moves this integration to Lumo's anonymous tier. Your conversation and AI task services, with their prompts and functions, are left untouched.",
+        "data": {
+          "api_key": "[%key:common::config_flow::data::api_key%]",
+          "base_url": "Base URL",
+          "skip_authentication": "Skip API authentication"
+        },
+        "data_description": {
+          "api_key": "Your Lumo API key from the Manage keys page at lumo.proton.me. Prefilled with the key in use. Clear it to switch to the anonymous tier, which has a lower quota.",
+          "base_url": "The Lumo API endpoint. Change this only if Proton moves the path, or to point the integration at another OpenAI-compatible server.",
+          "skip_authentication": "Skip the reachability and API-key check when saving. Useful if the endpoint is temporarily unreachable."
+        }
       }
+    },
+    "abort": {
+      "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
     }
   },
   "config_subentries": {

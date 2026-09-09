@@ -28,6 +28,11 @@ Setup asks for three things, all optional except in the obvious case:
 | Base URL | `https://lumo.proton.me/api/ai/v1` | Editable, so a pre-GA path change is a UI edit, not a release. |
 | Skip authentication | off | Skips the reachability and key check during setup. |
 
+All three stay editable afterwards: *Settings → Devices & Services → Lumo →* the three-dot menu on the
+entry *→ Reconfigure*. The key field is prefilled with the key in use, so clearing it is an explicit
+move to the anonymous tier. Your conversation and AI task services keep their prompts and functions —
+rotating a key does not mean deleting the integration.
+
 **`GET /models` does not authenticate.** It answers 200 for a valid key, a revoked key, and no key
 alike, so listing models proves reachability and nothing about your credential. Setup therefore
 validates a supplied key by completing a one-token request instead, which distinguishes three cases:

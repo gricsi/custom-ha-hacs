@@ -28,6 +28,9 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     SelectSelectorMode,
     TemplateSelector,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
 )
 from homeassistant.helpers.typing import VolDictType
 
@@ -81,7 +84,9 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         # Lumo answers anonymous requests on a lower quota tier, so the key is
         # optional. Base URL stays editable: the API is pre-GA and the path may
         # move, and this also lets you point the integration at a local model.
-        vol.Optional(CONF_API_KEY): str,
+        # Masked, because reconfigure prefills this field with the stored key so
+        # that clearing it is an unambiguous "move me to the anonymous tier".
+        vol.Optional(CONF_API_KEY): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
         vol.Optional(CONF_BASE_URL, default=DEFAULT_CONF_BASE_URL): str,
         vol.Optional(CONF_SKIP_AUTHENTICATION, default=DEFAULT_SKIP_AUTHENTICATION): bool,
     }
@@ -102,37 +107,64 @@ class LumoConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 2
     MINOR_VERSION = 1
 
+    async def _async_probe(self, user_input: dict[str, Any]) -> dict[str, str]:
+        """Probe the endpoint and key. Returns field errors, empty when all is well."""
+        if user_input.get(CONF_SKIP_AUTHENTICATION, DEFAULT_SKIP_AUTHENTICATION):
+            return {}
+
+        api_key = user_input.get(CONF_API_KEY)
+        try:
+            authenticated = await async_validate_input(self.hass, api_key, user_input.get(CONF_BASE_URL))
+        except openai.APIConnectionError:
+            return {"base": "cannot_connect"}
+        except openai.AuthenticationError:
+            return {"base": "invalid_auth"}
+        except Exception:
+            _LOGGER.exception("Unexpected exception validating the Lumo endpoint")
+            return {"base": "unknown"}
+
+        # Lumo serves an unrecognised credential anonymously with HTTP 200 rather
+        # than rejecting it, so this is the only way to tell the user their key is
+        # not actually being used.
+        if api_key and not authenticated:
+            return {CONF_API_KEY: "key_not_accepted"}
+        return {}
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Change the API key, base URL or auth check on an existing entry.
+
+        Without this the key is only settable during initial setup, so rotating it
+        means deleting the integration -- which takes the conversation and AI task
+        subentries with it, and with them the prompts and the function definitions.
+        """
+        entry = self._get_reconfigure_entry()
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="reconfigure",
+                data_schema=self.add_suggested_values_to_schema(STEP_USER_DATA_SCHEMA, entry.data),
+            )
+
+        if errors := await self._async_probe(user_input):
+            return self.async_show_form(
+                step_id="reconfigure",
+                data_schema=self.add_suggested_values_to_schema(STEP_USER_DATA_SCHEMA, user_input),
+                errors=errors,
+            )
+
+        # Replace rather than merge: clearing the field is how you move to the
+        # anonymous tier, and data_updates would silently keep the old key.
+        return self.async_update_reload_and_abort(entry, data=user_input)
+
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the initial step."""
         if user_input is None:
             return self.async_show_form(step_id="user", data_schema=STEP_USER_DATA_SCHEMA)
 
-        errors: dict[str, str] = {}
-
         if CONF_API_KEY in user_input:
             self._async_abort_entries_match({CONF_API_KEY: user_input[CONF_API_KEY]})
 
-        if not user_input.get(CONF_SKIP_AUTHENTICATION, DEFAULT_SKIP_AUTHENTICATION):
-            api_key = user_input.get(CONF_API_KEY)
-            try:
-                authenticated = await async_validate_input(
-                    self.hass,
-                    api_key,
-                    user_input.get(CONF_BASE_URL),
-                )
-            except openai.APIConnectionError:
-                errors["base"] = "cannot_connect"
-            except openai.AuthenticationError:
-                errors["base"] = "invalid_auth"
-            except Exception:
-                _LOGGER.exception("Unexpected exception validating the Lumo endpoint")
-                errors["base"] = "unknown"
-            else:
-                # Lumo serves an unrecognised credential anonymously with HTTP 200
-                # rather than rejecting it, so this is the only way to tell the
-                # user their key is not actually being used.
-                if api_key and not authenticated:
-                    errors[CONF_API_KEY] = "key_not_accepted"
+        errors = await self._async_probe(user_input)
 
         if not errors:
             return self.async_create_entry(

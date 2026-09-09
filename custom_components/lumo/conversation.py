@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from typing import Literal
 
+import voluptuous as vol
 import yaml
 
 from homeassistant.components import conversation
@@ -36,7 +37,14 @@ class CustomFunctionTool(llm.Tool):
         """Initialize the tool with function specification and implementation."""
         self.name = function_spec["name"]
         self.description = function_spec.get("description", f"Execute {self.name} function")
-        self.parameters = {}
+        # Core types Tool.parameters as a voluptuous schema, and _format_tool pushes
+        # it through probatio.to_openapi(). A YAML function's `parameters` block is
+        # already JSON Schema -- the shape chat/completions wants -- so it is carried
+        # separately and used verbatim. This used to be `self.parameters = {}` with the
+        # spec's block dropped on the floor, which advertised every custom function to
+        # the model as taking no arguments at all.
+        self.parameters = vol.Schema({})
+        self.raw_parameters = function_spec.get("parameters") or {"type": "object", "properties": {}}
         self.function_impl = function_impl
         self.function_spec = function_spec
         # The executors need the turn's ConversationInput -- script runs use its

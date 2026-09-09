@@ -177,12 +177,20 @@ def _format_tool(
     tool: llm.Tool, custom_serializer: Callable[[Any], Any] | None
 ) -> ChatCompletionFunctionToolParam:
     """Format a HA tool as a chat-completions function tool."""
+    # CustomFunctionTool carries the YAML spec's `parameters` block verbatim in
+    # raw_parameters: it is already JSON Schema, so converting it would be wrong.
+    # Core's own tools describe themselves with a voluptuous schema and do need it.
+    raw_parameters = getattr(tool, "raw_parameters", None)
     return ChatCompletionFunctionToolParam(
         type="function",
         function={
             "name": tool.name,
             "description": tool.description or "",
-            "parameters": _to_openapi(tool.parameters, custom_serializer=custom_serializer),
+            "parameters": (
+                raw_parameters
+                if raw_parameters is not None
+                else _to_openapi(tool.parameters, custom_serializer=custom_serializer)
+            ),
         },
     )
 

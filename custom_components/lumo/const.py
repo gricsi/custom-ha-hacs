@@ -68,6 +68,12 @@ REASONING_EFFORTS: list[str] = ["none", "medium", "high", "max"]
 
 DEFAULT_MAX_FUNCTION_CALLS_PER_CONVERSATION = 1
 DEFAULT_ATTACH_USERNAME = False
+
+# Ceiling on a single custom function's result, in characters. Every result is
+# appended to the chat log and the whole log is re-sent on each of the up to
+# MAX_TOOL_ITERATIONS passes, so one oversized result compounds into a hard
+# HTTP 400 from the API rather than a degraded answer. Roughly 5k tokens.
+MAX_FUNCTION_RESULT_CHARS = 20000
 DEFAULT_CONTEXT_THRESHOLD = 13000
 
 CONF_LLM_HASS_API = "llm_hass_api"

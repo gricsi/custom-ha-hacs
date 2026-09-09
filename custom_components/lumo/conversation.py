@@ -21,6 +21,7 @@ from .const import (
     DEFAULT_CONF_FUNCTIONS,
     DOMAIN,
     LOGGER,
+    MAX_FUNCTION_RESULT_CHARS,
 )
 from .entity import LumoBaseLLMEntity
 
@@ -110,6 +111,21 @@ class CustomFunctionTool(llm.Tool):
                 user_input,
                 exposed_entities,
             )
+
+            if isinstance(result, str) and len(result) > MAX_FUNCTION_RESULT_CHARS:
+                LOGGER.warning(
+                    "Function %s returned %s characters; truncating to %s. Every result stays in"
+                    " the chat log and the whole log is re-sent on each tool iteration, so an"
+                    " oversized one exhausts the model's context window",
+                    self.name,
+                    len(result),
+                    MAX_FUNCTION_RESULT_CHARS,
+                )
+                result = (
+                    result[:MAX_FUNCTION_RESULT_CHARS]
+                    + f"\n\n[Truncated. The full result was {len(result)} characters. Narrow the"
+                    " request -- ask for one item rather than everything -- and call again.]"
+                )
 
             LOGGER.info(
                 "Custom function %s executed successfully with result: %s",

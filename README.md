@@ -116,7 +116,7 @@ agent into a dashboard designer, a log triage assistant, or a terse everyday ass
 ## Tests
 
 ```bash
-pip install "homeassistant>=2025.4.0" pytest
+pip install "homeassistant>=2026.8.0" pytest
 python scripts/collect_test_requirements.py > /tmp/reqs.txt && pip install -r /tmp/reqs.txt
 pytest -q
 ```

@@ -2,10 +2,15 @@
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install "homeassistant>=2025.4.0" pytest
+pip install "homeassistant>=2026.8.0" pytest
 python scripts/collect_test_requirements.py > /tmp/reqs.txt && pip install -r /tmp/reqs.txt
 pytest -q
 ```
+
+The version floors are not cosmetic: `api.py` imports `homeassistant.components.llm`, which first
+shipped in **2026.8.0**, and core requires **Python 3.14.2+**. On a Python 3.13 interpreter pip
+silently caps out at homeassistant 2026.2.3 rather than failing, and the suite then dies at
+collection with `No module named 'homeassistant.components.llm'`.
 
 That second install step is not optional. The tests import the integration, which imports
 `homeassistant.components.conversation`, `rest`, `scrape` and `recorder`, and each of those imports

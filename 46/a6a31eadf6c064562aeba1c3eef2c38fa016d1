@@ -40,6 +40,20 @@ tests/README.md
       "human_author": "gricsi <richardgasztany@gmail.com>"
     }
   },
+  "commit_stats": {
+    "human_additions": 0,
+    "unknown_additions": 0,
+    "ai_additions": 1138,
+    "ai_accepted": 1138,
+    "git_diff_deleted_lines": 3,
+    "git_diff_added_lines": 1138,
+    "tool_model_breakdown": {
+      "claude::claude-opus-5": {
+        "ai_additions": 1138,
+        "ai_accepted": 1138
+      }
+    }
+  },
   "token_usage": {
     "attributable": {
       "total": {

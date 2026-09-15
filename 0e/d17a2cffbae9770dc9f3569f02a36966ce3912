@@ -1,0 +1,57 @@
+.github/workflows/tests.yaml
+  s_15498e46102af5::t_36f20e5e9a3fc9 15,17-24
+README.md
+  s_15498e46102af5::t_0e24b853690874 119
+hacs.json
+  s_15498e46102af5::t_fcf24089c11037 4
+pyproject.toml
+  s_15498e46102af5::t_21032a1705b80f 6,11
+tests/README.md
+  s_15498e46102af5::t_d081e9cb8cb05b 5,10-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.6.23",
+  "base_commit_sha": "0ed17a2cffbae9770dc9f3569f02a36966ce3912",
+  "prompts": {},
+  "sessions": {
+    "s_15498e46102af5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "535300b1-acd8-415e-a4e5-68257f46d778",
+        "model": "claude-opus-5"
+      },
+      "human_author": "gricsi <richardgasztany@gmail.com>"
+    }
+  },
+  "token_usage": {
+    "attributable": {
+      "total": {
+        "input_tokens": 24,
+        "output_tokens": 12873,
+        "cache_creation_input_tokens": 380161,
+        "cache_read_input_tokens": 1776125
+      },
+      "by_tool_model": {
+        "claude::claude-opus-5": {
+          "input_tokens": 24,
+          "output_tokens": 12873,
+          "cache_creation_input_tokens": 380161,
+          "cache_read_input_tokens": 1776125
+        }
+      },
+      "tool_uses": {
+        "bash": 10
+      }
+    },
+    "by_prompt": {
+      "s_15498e46102af5": {
+        "input_tokens": 24,
+        "output_tokens": 12873,
+        "cache_creation_input_tokens": 380161,
+        "cache_read_input_tokens": 1776125
+      }
+    }
+  },
+  "proton_build": "proton-89c3c702-dirty"
+}

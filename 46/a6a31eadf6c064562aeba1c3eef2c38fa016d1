@@ -1,0 +1,92 @@
+.gitignore
+  s_15498e46102af5::t_9fd3b28539d655 10
+README.md
+  s_15498e46102af5::t_3ba3d76f3f23fa 113-125
+custom_components/lumo/exceptions.py
+  s_15498e46102af5::t_1fc19f968f5474 96-111
+custom_components/lumo/helpers.py
+  s_15498e46102af5::t_e01666c03503c6 52,71-104,169-182,259-260,407-581
+custom_components/lumo/manifest.json
+  s_15498e46102af5::t_d649db8baaf9dd 6-7
+examples/README.md
+  s_15498e46102af5::t_fda37db16fd8d1 54,63
+examples/function/read_logs/README.md
+  s_15498e46102af5::t_54b57bd51faba5 1-146
+examples/prompt/log_doctor/README.md
+  s_15498e46102af5::t_4582031599b0c3 1-73
+pyproject.toml
+  s_15498e46102af5::t_616fd72f2b0f35 12,24-29
+tests/test_read_logs.py
+  s_15498e46102af5::t_409a7bc5c6a8ff 1-519
+.github/workflows/tests.yaml
+  s_15498e46102af5::t_92e521206f6e44 1-26
+scripts/collect_test_requirements.py
+  s_15498e46102af5::t_504a6938335a38 1-75
+tests/README.md
+  s_15498e46102af5::t_64655e322b9c73 1-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.6.23",
+  "base_commit_sha": "46a6a31eadf6c064562aeba1c3eef2c38fa016d1",
+  "prompts": {},
+  "sessions": {
+    "s_15498e46102af5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "535300b1-acd8-415e-a4e5-68257f46d778",
+        "model": "claude-opus-5"
+      },
+      "human_author": "gricsi <richardgasztany@gmail.com>"
+    }
+  },
+  "token_usage": {
+    "attributable": {
+      "total": {
+        "input_tokens": 164,
+        "output_tokens": 77955,
+        "cache_creation_input_tokens": 171853,
+        "cache_read_input_tokens": 9057739
+      },
+      "by_tool_model": {
+        "claude::claude-opus-5": {
+          "input_tokens": 164,
+          "output_tokens": 77955,
+          "cache_creation_input_tokens": 171853,
+          "cache_read_input_tokens": 9057739
+        }
+      },
+      "tool_uses": {
+        "bash": 72,
+        "toolsearch": 1,
+        "webfetch": 4,
+        "write": 4
+      }
+    },
+    "carried": {
+      "total": {
+        "input_tokens": 446,
+        "output_tokens": 215275,
+        "cache_creation_input_tokens": 10655716,
+        "cache_read_input_tokens": 53379786
+      },
+      "by_tool_model": {
+        "claude::claude-opus-5": {
+          "input_tokens": 446,
+          "output_tokens": 215275,
+          "cache_creation_input_tokens": 10655716,
+          "cache_read_input_tokens": 53379786
+        }
+      }
+    },
+    "by_prompt": {
+      "s_15498e46102af5": {
+        "input_tokens": 164,
+        "output_tokens": 77955,
+        "cache_creation_input_tokens": 171853,
+        "cache_read_input_tokens": 9057739
+      }
+    }
+  },
+  "proton_build": "proton-89c3c702-dirty"
+}

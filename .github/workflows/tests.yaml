@@ -1,0 +1,26 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v4"
+      - uses: "actions/setup-python@v5"
+        with:
+          python-version: "3.13"
+      - name: Install Home Assistant and pytest
+        run: pip install "homeassistant>=2025.4.0" pytest
+      - name: Install what the imported components pin
+        # Derived from the installed core rather than pinned here, so a new Home
+        # Assistant release cannot leave this job installing versions it does not use.
+        run: |
+          python scripts/collect_test_requirements.py > /tmp/component-requirements.txt
+          cat /tmp/component-requirements.txt
+          pip install -r /tmp/component-requirements.txt
+      - name: Run tests
+        run: pytest -q

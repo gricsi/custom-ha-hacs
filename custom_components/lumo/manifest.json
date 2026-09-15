@@ -3,7 +3,8 @@
   "name": "Lumo",
   "after_dependencies": [
     "assist_pipeline",
-    "intent"
+    "intent",
+    "system_log"
   ],
   "codeowners": [
     "@gricsi"

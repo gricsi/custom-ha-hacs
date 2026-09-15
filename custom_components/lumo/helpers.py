@@ -49,6 +49,7 @@ from .exceptions import (
     FunctionNotFound,
     InvalidFunction,
     NativeNotFound,
+    SystemLogUnavailable,
     ValueTemplateError,
 )
 
@@ -66,6 +67,40 @@ READABLE_CONFIG_FILES = (
 
 # A long automations.yaml would swamp the context window, so truncate rather than fail.
 MAX_CONFIG_FILE_CHARS = 60000
+
+# The Logs page (Settings -> System -> Logs, /config/logs) shows two different
+# things, and read_logs serves both: the deduplicated WARNING-and-above records the
+# system_log integration keeps in memory, and -- behind "Load full logs" -- the raw
+# home-assistant.log file.
+SYSTEM_LOG_DOMAIN = "system_log"
+
+# Where bootstrap stores the resolved log file path. homeassistant.const calls this
+# key KEY_DATA_LOGGING now and DATA_LOGGING before that, so the literal string is
+# the stable part -- importing the name is what breaks across versions.
+LOG_FILE_DATA_KEY = "logging"
+DEFAULT_LOG_FILE = "home-assistant.log"
+
+# Ordered least to most severe, so a `level` argument becomes an index comparison.
+LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+DEFAULT_LOG_ENTRIES = 25
+MAX_LOG_ENTRIES = 100
+DEFAULT_RAW_LOG_LINES = 100
+MAX_RAW_LOG_LINES = 500
+
+# Per-field and whole-result ceilings. A single stack trace can run thousands of
+# characters and one unhappy integration can log fifty of them, so bound both: this
+# result is a dict, which conversation.py's MAX_FUNCTION_RESULT_CHARS guard does not
+# cover -- it only truncates string results.
+MAX_LOG_MESSAGE_CHARS = 1500
+MAX_LOG_EXCEPTION_CHARS = 2500
+MAX_LOG_RESULT_CHARS = 20000
+MAX_RAW_LOG_CHARS = 20000
+
+# How much of the tail of the log file to pull off disk before splitting it into
+# lines. Debug logging for one chatty integration takes this file into the tens of
+# megabytes, so never read it whole.
+MAX_RAW_LOG_TAIL_BYTES = 512 * 1024
 
 
 def get_function_executor(value: str):
@@ -129,6 +164,20 @@ def _render_value_template(value_template: Template, value: Any, arguments, func
     if rendered is value:
         raise ValueTemplateError(function_type)
     return rendered
+
+
+def _clip(value: str, limit: int) -> str:
+    """Bound one field of a log entry, saying so rather than silently cutting."""
+    if len(value) <= limit:
+        return value
+    return f"{value[:limit]}\n[... {len(value) - limit} more characters]"
+
+
+def _as_local_iso(timestamp: Any) -> Any:
+    """Turn system_log's epoch float into the local time the Logs page displays."""
+    if not isinstance(timestamp, (int, float)):
+        return timestamp
+    return dt_util.as_local(dt_util.utc_from_timestamp(timestamp)).isoformat(timespec="seconds")
 
 
 def _get_rest_data(hass, rest_config, arguments):
@@ -207,6 +256,8 @@ class NativeFunctionExecutor(FunctionExecutor):
             return await self.add_automation(hass, function, arguments, user_input, exposed_entities)
         if name == "read_config":
             return await self.read_config(hass, function, arguments, user_input, exposed_entities)
+        if name == "read_logs":
+            return await self.read_logs(hass, function, arguments, user_input, exposed_entities)
         if name == "get_history":
             return await self.get_history(hass, function, arguments, user_input, exposed_entities)
         if name == "get_energy":
@@ -351,6 +402,181 @@ class NativeFunctionExecutor(FunctionExecutor):
             "exists": True,
             "truncated": len(content) > MAX_CONFIG_FILE_CHARS,
             "content": content[:MAX_CONFIG_FILE_CHARS],
+        }
+
+    async def read_logs(
+        self,
+        hass: HomeAssistant,
+        function,
+        arguments,
+        user_input: conversation.ConversationInput,
+        exposed_entities,
+    ):
+        """Read what the Logs page shows, so the agent can diagnose a broken install."""
+        # Normalised because a model happily sends "RAW" or "Warning" for an enum it was
+        # given in lower or upper case, and a case mismatch would silently mean "default".
+        source = str(arguments.get("source") or "errors").lower()
+        limit = self._log_limit(arguments.get("limit"), source)
+
+        if source == "raw":
+            return await self._read_raw_log(hass, limit)
+
+        level = arguments.get("level")
+        return self._read_system_log(hass, str(level).upper() if level else None, arguments.get("logger"), limit)
+
+    @staticmethod
+    def _log_limit(value: Any, source: str) -> int:
+        """Clamp the model's requested size, tolerating the string form of a number."""
+        default, maximum = (
+            (DEFAULT_RAW_LOG_LINES, MAX_RAW_LOG_LINES) if source == "raw" else (DEFAULT_LOG_ENTRIES, MAX_LOG_ENTRIES)
+        )
+        try:
+            limit = int(value)
+        except (TypeError, ValueError):
+            return default
+        return max(1, min(limit, maximum))
+
+    @staticmethod
+    def _log_severity(level: Any) -> int:
+        """Rank a level. An unrecognised one sorts highest, so a filter never hides it."""
+        try:
+            return LOG_LEVELS.index(level)
+        except ValueError:
+            return len(LOG_LEVELS)
+
+    def _read_system_log(self, hass: HomeAssistant, level: Any, logger: Any, limit: int) -> dict[str, Any]:
+        """Return the deduplicated error list, newest first.
+
+        Reads the same in-memory store the frontend reads over the system_log/list
+        websocket command. Nothing is copied to disk and nothing older than the last
+        restart is available -- system_log holds its last max_entries records (50 by
+        default) and loses them all on restart.
+        """
+        handler = hass.data.get(SYSTEM_LOG_DOMAIN)
+        to_list = getattr(getattr(handler, "records", None), "to_list", None)
+        if to_list is None:
+            raise SystemLogUnavailable()
+
+        records = to_list()
+
+        level_counts: dict[str, int] = {}
+        for record in records:
+            name = record.get("level") or "UNKNOWN"
+            level_counts[name] = level_counts.get(name, 0) + 1
+
+        # No level argument means everything the page shows. The handler itself only
+        # captures WARNING and above, but the system_log.write service can add records
+        # at any level, and silently dropping those would be surprising.
+        threshold = self._log_severity(level) if level in LOG_LEVELS else 0
+        needle = str(logger).lower() if logger else ""
+
+        matched = [
+            record
+            for record in records
+            if self._log_severity(record.get("level")) >= threshold
+            and (not needle or needle in str(record.get("name") or "").lower())
+        ]
+
+        entries: list[dict[str, Any]] = []
+        budget = MAX_LOG_RESULT_CHARS
+        for record in matched[:limit]:
+            entry = self._as_log_entry(record)
+            budget -= sum(len(str(value)) for value in entry.values())
+            if budget < 0 and entries:
+                break
+            entries.append(entry)
+
+        return {
+            "source": "errors",
+            "entries": entries,
+            "returned": len(entries),
+            "matched": len(matched),
+            "available": len(records),
+            "truncated": len(entries) < len(matched),
+            "level_counts": level_counts,
+        }
+
+    def _as_log_entry(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Flatten one system_log record into something a model reads without help.
+
+        Its to_dict() hands back epoch floats, source as a (file, line) pair, and
+        message as a *list* -- one entry per distinct message sharing the record's
+        dedup key, which is why a single entry can carry several.
+        """
+        message = record.get("message") or []
+        if isinstance(message, str):
+            message = [message]
+
+        source = record.get("source")
+        if isinstance(source, (list, tuple)) and len(source) == 2:
+            source = f"{source[0]}:{source[1]}"
+
+        entry = {
+            "level": record.get("level"),
+            "logger": record.get("name"),
+            "message": _clip("\n".join(str(item) for item in message), MAX_LOG_MESSAGE_CHARS),
+            "source": source,
+            "count": record.get("count", 1),
+            "first_occurred": _as_local_iso(record.get("first_occurred")),
+            "last_occurred": _as_local_iso(record.get("timestamp")),
+        }
+
+        if exception := record.get("exception"):
+            entry["exception"] = _clip(str(exception), MAX_LOG_EXCEPTION_CHARS)
+
+        return entry
+
+    async def _read_raw_log(self, hass: HomeAssistant, line_count: int) -> dict[str, Any]:
+        """Return the tail of home-assistant.log -- the page's "Load full logs" view."""
+        path = hass.data.get(LOG_FILE_DATA_KEY) or hass.config.path(DEFAULT_LOG_FILE)
+        return await hass.async_add_executor_job(self._read_log_tail, str(path), line_count)
+
+    def _read_log_tail(self, path: str, line_count: int) -> dict[str, Any]:
+        """Read the end of the log file. Runs in the executor, since this blocks."""
+        if not os.path.isfile(path):
+            return {
+                "source": "raw",
+                "path": path,
+                "exists": False,
+                "truncated": False,
+                "content": "",
+                "reason": (
+                    "no log file at this path. Home Assistant is probably not writing one"
+                    " (file logging can be disabled), so only source 'errors' is available"
+                ),
+            }
+
+        with open(path, "rb") as f:
+            size = f.seek(0, os.SEEK_END)
+            f.seek(max(0, size - MAX_RAW_LOG_TAIL_BYTES))
+            tail = f.read()
+
+        # errors="replace" because a traceback can carry a device name in any encoding,
+        # and losing one character beats failing the whole tool call.
+        text = tail.decode("utf-8", errors="replace")
+        if size > MAX_RAW_LOG_TAIL_BYTES:
+            # The first line of the window starts mid-way through a line; drop it.
+            text = text.split("\n", 1)[-1]
+
+        all_lines = text.splitlines()
+        kept = all_lines[-line_count:]
+        content = "\n".join(kept)
+
+        if len(content) > MAX_RAW_LOG_CHARS:
+            # Cutting by characters lands mid-line, so drop that first fragment too.
+            content = content[-MAX_RAW_LOG_CHARS:].split("\n", 1)[-1]
+            dropped = True
+        else:
+            dropped = False
+
+        return {
+            "source": "raw",
+            "path": path,
+            "exists": True,
+            "file_size": size,
+            "lines": len(content.splitlines()),
+            "truncated": dropped or size > MAX_RAW_LOG_TAIL_BYTES or len(all_lines) > len(kept),
+            "content": content,
         }
 
     async def get_history(

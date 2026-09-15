@@ -9,6 +9,7 @@ dependencies = []
 [dependency-groups]
 dev = [
     "homeassistant>=2025.4.0",
+    "pytest",
     "voluptuous",
     "PyYAML",
     "beautifulsoup4",
@@ -19,6 +20,12 @@ dev = [
 
 [tool.uv]
 default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+# The integration lives at custom_components/lumo/, so the tests import it the way
+# Home Assistant does -- from the repo root, as custom_components.lumo.*
+pythonpath = ["."]
+testpaths = ["tests"]
 
 [tool.black]
 line-length = 120

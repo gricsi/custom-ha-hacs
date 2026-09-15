@@ -110,8 +110,19 @@ subentry-based conversation/AI-task configuration model.
 
 Ready-made functions and prompts live in [`examples/`](examples/) — a home-inventory tool that lets
 the agent give advice about the devices you actually own, richer light control, named scene modes,
-recorder history lookups, and prompts that turn the agent into a dashboard designer or a terse
-everyday assistant.
+recorder history lookups, a log reader that diagnoses what is broken, and prompts that turn the
+agent into a dashboard designer, a log triage assistant, or a terse everyday assistant.
+
+## Tests
+
+```bash
+pip install "homeassistant>=2025.4.0" pytest
+python scripts/collect_test_requirements.py > /tmp/reqs.txt && pip install -r /tmp/reqs.txt
+pytest -q
+```
+
+Run against real Home Assistant, no async plugin, no config entry — see [tests/](tests/) for why the
+second install step is needed and what is covered.
 
 ## Install via HACS
 

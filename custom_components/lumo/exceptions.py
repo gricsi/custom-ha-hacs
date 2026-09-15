@@ -93,6 +93,22 @@ class ConfigFileNotReadable(HomeAssistantError):
         return f"reading '{self.filename}' is not allowed. Readable files are: {', '.join(self.allowed)}"
 
 
+class SystemLogUnavailable(HomeAssistantError):
+    """When the Logs page's deduplicated error list cannot be read."""
+
+    def __init__(self) -> None:
+        """Initialize error."""
+        super().__init__(self, "the system_log integration is not loaded")
+
+    def __str__(self) -> str:
+        """Return string representation."""
+        return (
+            "the system_log integration is not loaded, so the deduplicated error list is"
+            " unavailable. Call the function again with source 'raw' to read the log file"
+            " instead"
+        )
+
+
 class ValueTemplateError(HomeAssistantError):
     """When a function's value_template failed to render."""
 

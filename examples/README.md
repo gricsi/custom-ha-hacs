@@ -51,6 +51,7 @@ asks what devices exist, or asks you to design or improve a dashboard" gets call
 | [recent_activity](function/recent_activity/) | `sqlite` | "Why did the hallway light come on at 3am?" — reads recorder history |
 | [ask_user](function/ask_user/) | `script` | The agent can push a notification and ask a follow-up question |
 | [read_config](function/read_config/) | `native` | "Read my automations.yaml and suggest fixes" — read-only access to four config files |
+| [read_logs](function/read_logs/) | `native` | "What's broken?" — reads the Logs page's error list, and the raw log file behind it |
 | [node_red_flows](function/node_red_flows/) | `rest` | "Which of my Node-RED nodes is never reached?" — reads flows over the add-on's admin API |
 
 ## Prompts
@@ -59,6 +60,7 @@ asks what devices exist, or asks you to design or improve a dashboard" gets call
 | --- | --- |
 | [dashboard_designer](prompt/dashboard_designer/) | Turns the agent into a Lovelace author that emits YAML you can paste |
 | [smart_home_manager](prompt/smart_home_manager/) | A terser, action-biased everyday assistant |
+| [log_doctor](prompt/log_doctor/) | Triages the error log and hands back pasteable fixes (pairs with `read_logs` + `read_config`) |
 
 ## Automations
 

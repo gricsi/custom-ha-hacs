@@ -13,7 +13,7 @@ dev = [
     "voluptuous",
     "PyYAML",
     "beautifulsoup4",
-    "openai>=3.10.0",
+    "openai>=2.45.0,<4",
     "python-slugify",
     "voluptuous-openapi",
 ]

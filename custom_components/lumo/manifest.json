@@ -24,8 +24,7 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/gricsi/custom-ha-hacs/issues",
   "requirements": [
-    "openai==2.45.0",
-    "orjson>=3.10.12"
+    "openai>=3.10.0,<4"
   ],
   "version": "0.1.0"
 }

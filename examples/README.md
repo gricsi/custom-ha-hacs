@@ -54,6 +54,35 @@ asks what devices exist, or asks you to design or improve a dashboard" gets call
 | [read_logs](function/read_logs/) | `native` | "What's broken?" — reads the Logs page's error list, and the raw log file behind it |
 | [node_red_flows](function/node_red_flows/) | `rest` | "Which of my Node-RED nodes is never reached?" — reads flows over the add-on's admin API |
 
+### Telling Home Assistant how a function behaves
+
+Besides `name`, `description` and `parameters`, a `spec` may carry two optional keys that
+describe the function rather than its arguments:
+
+```yaml
+- spec:
+    name: read_logs
+    title: Read the Home Assistant log   # human-readable label
+    annotations:
+      read_only: true      # does not change anything
+      destructive: false   # cannot damage anything
+      idempotent: true     # calling twice is the same as calling once
+      open_world: false    # reaches no further than Home Assistant
+```
+
+Both are optional and both are ignored by Home Assistant 2026.9 and earlier, which has no
+place to put them — the function works the same either way.
+
+`annotations` is worth setting. Home Assistant's defaults assume the worst of a function
+that says nothing: it writes, it is destructive, and it reaches outside your house. That is
+the right assumption for an arbitrary bit of YAML, but it understates nothing and overstates
+plenty — `read_logs` and [read_config](function/read_config/) genuinely cannot change a thing,
+and saying so is better than describing it in prose and hoping the model reads it.
+
+Keys the running Home Assistant does not recognise, and values that are not `true`/`false`,
+are dropped with a warning in the log rather than applied. A typo therefore leaves a function
+described pessimistically — it can never quietly promote one to read-only.
+
 ## Prompts
 
 | Example | What it does |

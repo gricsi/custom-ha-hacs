@@ -19,6 +19,16 @@ caused it, and give you the corrected block to paste.
 ```yaml
 - spec:
     name: read_logs
+    title: Read the Home Assistant log
+    # The description already says this is read-only, in prose, for the model. These say
+    # it to Home Assistant itself, which otherwise assumes any function may do anything.
+    # Ignored on 2026.9 and earlier -- see "Telling Home Assistant how a function
+    # behaves" in ../../README.md.
+    annotations:
+      read_only: true
+      destructive: false
+      idempotent: true
+      open_world: false
     description: >-
       Read the Home Assistant log, the same thing the Settings > System > Logs page shows. Use
       this when the user asks what is broken, why an integration stopped working or failed to

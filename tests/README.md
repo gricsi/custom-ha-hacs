@@ -34,4 +34,20 @@ repeat. `read_logs` reads `hass.data["system_log"].records` and trusts the shape
 `LogEntry.to_dict()`, neither of which is public API, so that test is the tripwire for Home
 Assistant reshaping the store — the fake-record tests would keep passing happily.
 
+`test_tool_metadata.py` — the `integration`, `title` and `annotations` that `CustomFunctionTool`
+puts on each tool. The parsing of a spec's `annotations:` block, including the rejections: an
+unknown key, a non-boolean value and a non-mapping block all fall back to Home Assistant's
+pessimistic defaults and log rather than raising.
+
+Two tests there skip on the version this suite installs, and that is the point. `annotations`
+needs `llm.ToolAnnotations`, which arrived after 2026.9, so the rest of the file stubs it — and
+a stub cannot notice core renaming a field or changing a default. `test_declared_annotation_keys_exist_on_the_real_core`
+and `test_stub_still_matches_the_real_defaults` check the genuine class when there is one. They
+are inert today and start running the moment Home Assistant is upgraded past 2026.9.
+
+There is deliberately no way to run those two early. Injecting a stand-in `ToolAnnotations` to
+un-skip them would have them check a stub against a stub, which passes whatever core does — the
+only thing they are for is the real class. Until then the values they guard are verified by
+reading core, not by this suite.
+
 Nothing else in the integration has tests yet.

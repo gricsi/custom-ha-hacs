@@ -1,7 +1,8 @@
 """Conversation support for Lumo."""
 
 from collections.abc import Callable
-from typing import Literal
+from dataclasses import fields as dataclass_fields
+from typing import Any, Literal
 
 import voluptuous as vol
 import yaml
@@ -26,6 +27,67 @@ from .const import (
 from .entity import LumoBaseLLMEntity
 
 
+def build_tool_annotations(function_name: str, declared: Any) -> Any | None:
+    """Turn a function spec's `annotations:` block into an llm.ToolAnnotations.
+
+    Core gained ToolAnnotations after 2026.9, so this returns None on an older one and
+    the caller leaves the attribute unset -- the tool keeps the three fields every
+    supported core understands.
+
+    The accepted keys are read off the dataclass rather than listed here, so a field
+    core adds later works without a change on this side. Anything else is dropped with
+    a warning: these describe how much damage a tool may do, and a typo must not be
+    able to quietly claim a function is read-only.
+    """
+    annotations_cls = getattr(llm, "ToolAnnotations", None)
+    if annotations_cls is None:
+        return None
+
+    try:
+        allowed = {field.name for field in dataclass_fields(annotations_cls)}
+    except TypeError:
+        LOGGER.warning("llm.ToolAnnotations is not a dataclass; ignoring annotations for %s", function_name)
+        return None
+
+    # Core's defaults describe the least safe case -- a tool that declares nothing is
+    # taken to write, to be destructive, and to reach outside Home Assistant. That is
+    # the right default for an arbitrary user-defined function, so an absent or
+    # unusable block leaves it alone rather than guessing something more permissive.
+    if declared is None:
+        return annotations_cls()
+
+    if not isinstance(declared, dict):
+        LOGGER.warning(
+            "Function %s declares annotations as %s, expected a mapping of %s; using the safe defaults",
+            function_name,
+            type(declared).__name__,
+            ", ".join(sorted(allowed)),
+        )
+        return annotations_cls()
+
+    values: dict[str, bool] = {}
+    for key, value in declared.items():
+        if key not in allowed:
+            LOGGER.warning(
+                "Function %s declares unknown annotation %r; expected one of %s",
+                function_name,
+                key,
+                ", ".join(sorted(allowed)),
+            )
+            continue
+        if not isinstance(value, bool):
+            LOGGER.warning(
+                "Function %s declares annotation %s as %r, expected true or false; ignoring it",
+                function_name,
+                key,
+                value,
+            )
+            continue
+        values[key] = value
+
+    return annotations_cls(**values)
+
+
 class CustomFunctionTool(llm.Tool):
     """Tool for executing custom functions defined in the configuration."""
 
@@ -48,11 +110,38 @@ class CustomFunctionTool(llm.Tool):
         self.raw_parameters = function_spec.get("parameters") or {"type": "object", "properties": {}}
         self.function_impl = function_impl
         self.function_spec = function_spec
+        # Three bits of tool metadata core grew after 2026.9. They are set on the
+        # instance, so on an older core they are inert attributes nothing reads.
+        #
+        # `integration` records who provides the tool. Core warns about untagged tools
+        # and stops accepting them in 2027.10. Setting it here is not just early
+        # compliance: core's fallback tagger runs in APIInstance.__post_init__, and
+        # these tools are appended to llm_api.tools *after* that, so they would never
+        # be tagged automatically and never trigger the warning either -- they would
+        # stay untagged in silence until the day enforcement lands.
+        self.integration = DOMAIN
+        self.title = self._declared_title(function_spec)
+        annotations = build_tool_annotations(self.name, function_spec.get("annotations"))
+        if annotations is not None:
+            self.annotations = annotations
         # The executors need the turn's ConversationInput -- script runs use its
         # Context for attribution, and get_user_from_user_id reads its user_id.
         # LLMContext no longer carries the user's prompt, so the entity hands us
         # the real input instead of us rebuilding a fake one.
         self._get_user_input = get_user_input
+
+    @staticmethod
+    def _declared_title(function_spec: dict) -> str | None:
+        """Return the spec's human-readable title, if it gave a usable one."""
+        title = function_spec.get("title")
+        if title is None or isinstance(title, str):
+            return title
+        LOGGER.warning(
+            "Function %s declares title as %s, expected a string; ignoring it",
+            function_spec.get("name"),
+            type(title).__name__,
+        )
+        return None
 
     async def async_call(
         self,

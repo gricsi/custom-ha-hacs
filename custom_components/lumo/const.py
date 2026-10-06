@@ -132,7 +132,19 @@ DEFAULT_CONF_FUNCTIONS = [
     {
         "spec": {
             "name": "execute_services",
+            "title": "Execute Home Assistant services",
             "description": "Use this function to execute service of devices in Home Assistant.",
+            # Spelled out rather than left to core's defaults, which assume the worst of
+            # a tool that says nothing. Three of these match that assumption and are
+            # correct for it -- calling arbitrary services writes, can be destructive,
+            # and repeating a call is not the same as making it once. Only open_world
+            # differs: this reaches no further than Home Assistant itself.
+            "annotations": {
+                "read_only": False,
+                "destructive": True,
+                "idempotent": False,
+                "open_world": False,
+            },
             "parameters": {
                 "type": "object",
                 "properties": {

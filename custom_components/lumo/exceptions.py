@@ -109,6 +109,37 @@ class SystemLogUnavailable(HomeAssistantError):
         )
 
 
+class TraceUnavailable(HomeAssistantError):
+    """When the automation and script trace store cannot be read."""
+
+    def __init__(self) -> None:
+        """Initialize error."""
+        super().__init__(self, "the trace integration is not loaded")
+
+    def __str__(self) -> str:
+        """Return string representation."""
+        return (
+            "the trace integration is not loaded, so no automation or script traces exist. It"
+            " comes with default_config; without that, add `trace:` to configuration.yaml"
+        )
+
+
+class InvalidTraceTarget(HomeAssistantError):
+    """When traces are requested for something that is not an automation or script."""
+
+    def __init__(self, entity_id: str) -> None:
+        """Initialize error."""
+        super().__init__(self, f"'{entity_id}' has no traces")
+        self.entity_id = entity_id
+
+    def __str__(self) -> str:
+        """Return string representation."""
+        return (
+            f"'{self.entity_id}' has no traces. Only automation.* and script.* entities are traced;"
+            " call without entity_id to list recent runs"
+        )
+
+
 class ValueTemplateError(HomeAssistantError):
     """When a function's value_template failed to render."""
 

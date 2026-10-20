@@ -18,9 +18,10 @@ its own pinned packages (`hassil`, `xmltodict`, `lxml`, `SQLAlchemy`, …) at mo
 `pip install homeassistant` alone fails at collection. The script reads those pins off the core you
 just installed rather than from a list here, which would drift with every HA release.
 
-Tests run against real Home Assistant, with a `FakeHass` supplying the three things the code under
-test actually uses (`hass.data`, `hass.config.path`, `hass.async_add_executor_job`). No event loop,
-no config entry, no async plugin.
+Tests run against real Home Assistant. The `read_logs` tests use a `FakeHass` supplying the three
+things that code actually uses (`hass.data`, `hass.config.path`, `hass.async_add_executor_job`);
+the `render_template` and `get_traces` tests build a bare real `HomeAssistant` instead (see below).
+Either way: no config entry, no async plugin — `asyncio.run()` is enough.
 
 ## What is covered
 
@@ -49,5 +50,19 @@ There is deliberately no way to run those two early. Injecting a stand-in `ToolA
 un-skip them would have them check a stub against a stub, which passes whatever core does — the
 only thing they are for is the real class. Until then the values they guard are verified by
 reading core, not by this suite.
+
+`test_render_template.py` — the `render_template` native function: rendering states and
+attributes, errors returned as data rather than raised, the will-timeout refusal of a slow
+template, and the result clip. These run against a real `HomeAssistant` instance instead of a
+`FakeHass`, because rendering goes through `Template`, its sandbox and its timeout thread — a fake
+would only test itself. A bare instance needs no config entry; it must be built inside the running
+loop, which is what each test's `run()` does.
+
+`test_get_traces.py` — the `get_traces` native function, at all three levels (everything, one
+entity, one run). The traces are the real `AutomationTrace`/`ScriptTrace` classes filled with real
+`TraceElement`s in the real `TraceBuckets` container, for the same reason as the real-records test
+in `test_read_logs.py`: `hass.data["trace"]` and the trace dict shapes are not public API, so only
+the genuine classes notice core reshaping them. One test builds the pre-2026.9 store shape (a plain
+`LimitedSizeDict` per entry), which `manifest.json` still allows.
 
 Nothing else in the integration has tests yet.

@@ -52,6 +52,9 @@ asks what devices exist, or asks you to design or improve a dashboard" gets call
 | [ask_user](function/ask_user/) | `script` | The agent can push a notification and ask a follow-up question |
 | [read_config](function/read_config/) | `native` | "Read my automations.yaml and suggest fixes" — read-only access to four config files |
 | [read_logs](function/read_logs/) | `native` | "What's broken?" — reads the Logs page's error list, and the raw log file behind it |
+| [get_traces](function/get_traces/) | `native` | "Did my automation run, and where did it stop?" — reads the automation editor's Traces page |
+| [render_template](function/render_template/) | `native` | "Why does my template sensor say 22?" — evaluates templates like Developer tools → Template |
+| [get_entity_state](function/get_entity_state/) | `template` | Every attribute of any entity — where a debugging answer usually hides |
 | [node_red_flows](function/node_red_flows/) | `rest` | "Which of my Node-RED nodes is never reached?" — reads flows over the add-on's admin API |
 
 ### Telling Home Assistant how a function behaves

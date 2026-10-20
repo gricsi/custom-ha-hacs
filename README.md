@@ -110,7 +110,8 @@ subentry-based conversation/AI-task configuration model.
 
 Ready-made functions and prompts live in [`examples/`](examples/) — a home-inventory tool that lets
 the agent give advice about the devices you actually own, richer light control, named scene modes,
-recorder history lookups, a log reader that diagnoses what is broken, and prompts that turn the
+recorder history lookups, a log reader that diagnoses what is broken, debugging tools that read
+automation traces, evaluate templates and dump any entity's attributes, and prompts that turn the
 agent into a dashboard designer, a log triage assistant, or a terse everyday assistant.
 
 ## Tests

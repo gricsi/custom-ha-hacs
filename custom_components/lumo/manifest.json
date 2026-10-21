@@ -4,7 +4,8 @@
   "after_dependencies": [
     "assist_pipeline",
     "intent",
-    "system_log"
+    "system_log",
+    "trace"
   ],
   "codeowners": [
     "@gricsi"

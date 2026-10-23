@@ -3,8 +3,8 @@
 A new user ticks the tools they want and, for Node-RED, gives a URL and a login; this turns
 that into the function YAML the agent runs, so nobody has to write it to get started.
 
-read_logs and node_red_flows are copied from examples/function/*/README.md, which stay the
-documentation; tests/test_quick_setup.py fails if the two drift apart. Both only read, and
+read_logs, node_red_flows and get_device_info are copied from examples/function/*/README.md, which stay the
+documentation; tests/test_quick_setup.py fails if they drift apart. All three only read, and
 say so in their annotations.
 """
 
@@ -132,10 +132,65 @@ _NODE_RED_FLOWS = r"""
       {%- endif %}
 """
 
+_GET_DEVICE_INFO = r"""
+- spec:
+    name: get_device_info
+    title: Read device details
+    annotations:
+      read_only: true
+      destructive: false
+      idempotent: true
+      open_world: false
+    description: >-
+      Read the details of the device behind an entity, or of a device by its name - what the
+      device page in Home Assistant shows: manufacturer, model, firmware and hardware version,
+      integration, configuration URL (its own web page), MAC address, area, and every entity on
+      the device with its state. Use before troubleshooting or explaining any hardware - why a
+      device is offline, how to restart or power it, what it is - instead of guessing what it is.
+      Pass entity ids or device names; several at once is fine.
+    parameters:
+      type: object
+      properties:
+        targets:
+          type: array
+          items:
+            type: string
+          description: Entity ids (sensor.boiler_relay_temperature) or device names (Boiler Relay).
+      required: [targets]
+  function:
+    type: template
+    value_template: |-
+      {%- for t in targets | default([], true) %}
+      {%- set d = device_id(t) %}
+      {%- if d %}
+      {%- set ns = namespace(entities={}) %}
+      {%- for e in device_entities(d) %}{% set ns.entities = dict(ns.entities, **{e: states(e)}) %}{% endfor %}
+      {{ t }}: {{ {
+          'device': device_attr(d, 'name_by_user') or device_attr(d, 'name'),
+          'manufacturer': device_attr(d, 'manufacturer'),
+          'model': device_attr(d, 'model'),
+          'model_id': device_attr(d, 'model_id'),
+          'sw_version': device_attr(d, 'sw_version'),
+          'hw_version': device_attr(d, 'hw_version'),
+          'integration': (device_attr(d, 'identifiers') | list | first | default(['unknown']))[0],
+          'configuration_url': device_attr(d, 'configuration_url'),
+          'connections': device_attr(d, 'connections') | map('join', ' ') | list,
+          'area': area_name(d),
+          'entities': ns.entities,
+        } | tojson }}
+      {%- elif '.' in t and states[t] %}
+      {{ t }}: not part of a device
+      {%- else %}
+      {{ t }}: no device or entity by that name
+      {%- endif %}
+      {%- endfor %}
+"""
+
 TOOL_PRESETS: dict[str, dict[str, Any]] = {
     "execute_services": DEFAULT_CONF_FUNCTIONS[0],
     "read_logs": yaml.safe_load(_READ_LOGS)[0],
     "node_red_flows": yaml.safe_load(_NODE_RED_FLOWS)[0],
+    "get_device_info": yaml.safe_load(_GET_DEVICE_INFO)[0],
 }
 
 

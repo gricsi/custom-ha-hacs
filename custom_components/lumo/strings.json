@@ -66,7 +66,7 @@
             "customize": "Customize everything"
           },
           "data_description": {
-            "tools": "Reading the log and the Node-RED flows is read-only. Controlling devices calls Home Assistant actions.",
+            "tools": "Reading the log, device details and the Node-RED flows is read-only. Controlling devices calls Home Assistant actions.",
             "node_red_url": "Only for Node-RED. The address of the Node-RED editor, e.g. http://192.168.1.10:1880 — the HA host's IP, not a container name.",
             "node_red_username": "Leave empty if the Node-RED editor has no login. Give Lumo a read-only Node-RED user.",
             "customize": "Continue to the full settings — prompt, model, functions — prefilled from this form."
@@ -172,7 +172,8 @@
       "options": {
         "execute_services": "Control devices",
         "read_logs": "Read Home Assistant logs",
-        "node_red_flows": "Read Node-RED flows"
+        "node_red_flows": "Read Node-RED flows",
+        "get_device_info": "Read device details"
       }
     },
     "sidebar": {

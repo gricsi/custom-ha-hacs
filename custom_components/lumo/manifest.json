@@ -4,7 +4,8 @@
   "after_dependencies": [
     "assist_pipeline",
     "intent",
-    "system_log"
+    "system_log",
+    "trace"
   ],
   "codeowners": [
     "@gricsi"
@@ -13,11 +14,15 @@
   "dependencies": [
     "conversation",
     "energy",
+    "frontend",
     "history",
+    "http",
     "llm",
+    "panel_custom",
     "recorder",
     "rest",
-    "scrape"
+    "scrape",
+    "websocket_api"
   ],
   "documentation": "https://github.com/gricsi/custom-ha-hacs",
   "integration_type": "service",

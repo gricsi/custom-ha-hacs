@@ -3,7 +3,7 @@ import os
 import sqlite3
 import time
 from abc import ABC, abstractmethod
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from urllib import parse
 
@@ -35,10 +35,12 @@ from homeassistant.const import (
     SERVICE_RELOAD,
 )
 from homeassistant.core import HomeAssistant, State
-from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
+from homeassistant.exceptions import HomeAssistantError, ServiceNotFound, TemplateError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.json import json_dumps
 from homeassistant.helpers.script import Script
 from homeassistant.helpers.template import Template
+from homeassistant.util.json import json_loads
 
 from .const import CONF_PAYLOAD_TEMPLATE, DOMAIN, EVENT_AUTOMATION_REGISTERED
 from .exceptions import (
@@ -48,8 +50,10 @@ from .exceptions import (
     EntityNotFound,
     FunctionNotFound,
     InvalidFunction,
+    InvalidTraceTarget,
     NativeNotFound,
     SystemLogUnavailable,
+    TraceUnavailable,
     ValueTemplateError,
 )
 
@@ -101,6 +105,24 @@ MAX_RAW_LOG_CHARS = 20000
 # lines. Debug logging for one chatty integration takes this file into the tens of
 # megabytes, so never read it whole.
 MAX_RAW_LOG_TAIL_BYTES = 512 * 1024
+
+# render_template evaluates a template the model wrote, so bound it the way the Developer
+# tools Template page does: refuse one that would not finish in time, rather than let a loop
+# over every state tie up a worker thread.
+TEMPLATE_RENDER_TIMEOUT = 3.0
+MAX_TEMPLATE_RESULT_CHARS = 20000
+
+# get_traces reads hass.data["trace"], the store behind the automation editor's Traces page.
+# The literal key for the same reason as LOG_FILE_DATA_KEY: the constant has moved before.
+TRACE_DATA_KEY = "trace"
+TRACEABLE_DOMAINS = ("automation", "script")
+DEFAULT_TRACE_RUNS = 5
+MAX_TRACE_RUNS = 20
+# One trigger step's variables carry the full old and new state of the entity that fired,
+# attributes and all, so clip each value rather than let one step crowd out the rest.
+MAX_TRACE_VALUE_CHARS = 1000
+MAX_TRACE_CONFIG_CHARS = 6000
+MAX_TRACE_RESULT_CHARS = 20000
 
 
 def get_function_executor(value: str):
@@ -178,6 +200,31 @@ def _as_local_iso(timestamp: Any) -> Any:
     if not isinstance(timestamp, (int, float)):
         return timestamp
     return dt_util.as_local(dt_util.utc_from_timestamp(timestamp)).isoformat(timespec="seconds")
+
+
+def _plain(value: Any) -> Any:
+    """Round-trip through Home Assistant's JSON encoder into plain dicts, lists and strings.
+
+    A trace holds datetimes, Contexts and whole State objects. The tool result is later
+    serialised with bare orjson, which knows none of those, so convert here -- with the
+    encoder that does -- rather than fail at the end of the turn.
+    """
+    return json_loads(json_dumps(value))
+
+
+def _clip_json(value: Any, limit: int) -> Any:
+    """Keep a JSON value whole if it fits, otherwise hand back its clipped serialisation."""
+    text = json_dumps(value)
+    if len(text) <= limit:
+        return value
+    return _clip(text, limit)
+
+
+def _iso_to_local(value: Any) -> Any:
+    """Show a trace's UTC ISO timestamp in local time, the way the Traces page does."""
+    if not isinstance(value, str) or (parsed := dt_util.parse_datetime(value)) is None:
+        return value
+    return dt_util.as_local(parsed).isoformat(timespec="seconds")
 
 
 def _get_rest_data(hass, rest_config, arguments):
@@ -258,6 +305,10 @@ class NativeFunctionExecutor(FunctionExecutor):
             return await self.read_config(hass, function, arguments, user_input, exposed_entities)
         if name == "read_logs":
             return await self.read_logs(hass, function, arguments, user_input, exposed_entities)
+        if name == "render_template":
+            return await self.render_template(hass, function, arguments, user_input, exposed_entities)
+        if name == "get_traces":
+            return await self.get_traces(hass, function, arguments, user_input, exposed_entities)
         if name == "get_history":
             return await self.get_history(hass, function, arguments, user_input, exposed_entities)
         if name == "get_energy":
@@ -578,6 +629,251 @@ class NativeFunctionExecutor(FunctionExecutor):
             "truncated": dropped or size > MAX_RAW_LOG_TAIL_BYTES or len(all_lines) > len(kept),
             "content": content,
         }
+
+    async def render_template(
+        self,
+        hass: HomeAssistant,
+        function,
+        arguments,
+        user_input: conversation.ConversationInput,
+        exposed_entities,
+    ):
+        """Evaluate a Jinja template, the way Developer tools > Template does.
+
+        Read-only: a template can read any state and attribute but cannot call a service.
+        That reach is the point -- debugging needs the input_number nobody exposed to Assist --
+        so this deliberately does not check exposure, unlike get_history.
+
+        Errors come back as data rather than raising, because a broken template is the
+        model's own mistake and the message is what it needs to write a working one.
+        """
+        source = arguments.get("template")
+        if not isinstance(source, str) or not source.strip():
+            return {"ok": False, "error": "template is empty"}
+
+        template = Template(source, hass)
+        try:
+            template.ensure_valid()
+            if await template.async_render_will_timeout(TEMPLATE_RENDER_TIMEOUT, strict=False):
+                return {
+                    "ok": False,
+                    "error": (
+                        f"rendering took longer than {TEMPLATE_RENDER_TIMEOUT:g} seconds. Narrow it --"
+                        " look up the entities you need by id instead of looping over every state"
+                    ),
+                }
+            rendered = template.async_render(parse_result=False)
+        except TemplateError as err:
+            return {"ok": False, "error": str(err)}
+
+        rendered = str(rendered)
+        return {
+            "ok": True,
+            "result": _clip(rendered, MAX_TEMPLATE_RESULT_CHARS),
+            "truncated": len(rendered) > MAX_TEMPLATE_RESULT_CHARS,
+        }
+
+    async def get_traces(
+        self,
+        hass: HomeAssistant,
+        function,
+        arguments,
+        user_input: conversation.ConversationInput,
+        exposed_entities,
+    ):
+        """Read automation and script traces, the editor's Traces page.
+
+        Three widening steps, like node_red_flows: no entity lists recent runs across every
+        automation and script; an entity lists that one's runs; an entity and a run_id return
+        that run step by step. Automations are rarely exposed to Assist and debugging one is
+        the whole point, so this does not check exposure.
+        """
+        store = hass.data.get(TRACE_DATA_KEY)
+        if store is None:
+            raise TraceUnavailable()
+
+        await self._restore_traces(hass)
+
+        limit = self._trace_limit(arguments.get("limit"))
+        entity_id = str(arguments.get("entity_id") or "").strip().lower()
+
+        if not entity_id:
+            runs = self._newest_first([run for key in list(store) for run in self._trace_runs(store, key)])
+            return {
+                "runs": runs[:limit],
+                "returned": min(limit, len(runs)),
+                "available": len(runs),
+            }
+
+        key = self._trace_key(hass, entity_id)
+        run_id = str(arguments.get("run_id") or "").strip()
+
+        if not run_id:
+            runs = self._trace_runs(store, key)
+            return {
+                "entity_id": entity_id,
+                "runs": runs[:limit],
+                "returned": min(limit, len(runs)),
+                "available": len(runs),
+                **({} if runs else {"reason": self._no_traces_reason(entity_id)}),
+            }
+
+        return self._trace_detail(store, key, entity_id, run_id)
+
+    @staticmethod
+    async def _restore_traces(hass: HomeAssistant) -> None:
+        """Load the traces saved at the last shutdown, as the Traces page does on first open."""
+        try:
+            from homeassistant.components.trace.util import async_restore_traces
+        except ImportError:
+            return
+        await async_restore_traces(hass)
+
+    @staticmethod
+    def _trace_limit(value: Any) -> int:
+        try:
+            limit = int(value)
+        except (TypeError, ValueError):
+            return DEFAULT_TRACE_RUNS
+        return max(1, min(limit, MAX_TRACE_RUNS))
+
+    @staticmethod
+    def _trace_key(hass: HomeAssistant, entity_id: str) -> str:
+        """Map an entity id to the key its traces are stored under.
+
+        Automations are keyed by their config id, not their entity id -- renaming an
+        automation keeps its traces -- and the id is on the state as an attribute. Scripts
+        are keyed by object id.
+        """
+        domain, _, object_id = entity_id.partition(".")
+        if domain not in TRACEABLE_DOMAINS or not object_id:
+            raise InvalidTraceTarget(entity_id)
+
+        state = hass.states.get(entity_id)
+        if state is None:
+            raise EntityNotFound(entity_id)
+
+        if domain == "automation":
+            return f"automation.{state.attributes.get('id')}"
+        return f"script.{object_id}"
+
+    @staticmethod
+    def _no_traces_reason(entity_id: str) -> str:
+        if entity_id.startswith("automation."):
+            return (
+                "no traces stored. Either it has not run since its traces were last cleared, or it"
+                " has no id: field -- Home Assistant only keeps traces for automations that have one"
+            )
+        return "no traces stored. It has not run since its traces were last cleared"
+
+    @staticmethod
+    def _bucket_traces(bucket: Any) -> list[Any]:
+        """Every trace in one store entry, oldest first.
+
+        From 2026.9 an entry splits runs from not-triggered evaluations; before that it was
+        one LimitedSizeDict of runs. Handle both, since manifest.json allows 2026.8.
+        """
+        if bucket is None:
+            return []
+        if hasattr(bucket, "runs") and hasattr(bucket, "not_triggered"):
+            return [*bucket.runs.values(), *bucket.not_triggered.values()]
+        return list(bucket.values())
+
+    def _trace_runs(self, store: dict[str, Any], key: str) -> list[dict[str, Any]]:
+        """Summarise one automation's or script's traces, newest first."""
+        runs = []
+        for trace in self._bucket_traces(store.get(key)):
+            short = _plain(trace.as_short_dict())
+            timestamp = short.get("timestamp") or {}
+            run = {
+                "entity": f"{short.get('domain')}.{short.get('item_id')}",
+                "run_id": short.get("run_id"),
+                "start": _iso_to_local(timestamp.get("start")),
+                "finish": _iso_to_local(timestamp.get("finish")),
+                "state": short.get("state"),
+                "script_execution": short.get("script_execution"),
+                "last_step": short.get("last_step"),
+            }
+            if short.get("trigger"):
+                run["trigger"] = short["trigger"]
+            if short.get("not_triggered"):
+                run["not_triggered"] = True
+            if short.get("error"):
+                run["error"] = short["error"]
+            runs.append(run)
+
+        return self._newest_first(runs)
+
+    @staticmethod
+    def _newest_first(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Real runs before not-triggered evaluations, each newest first.
+
+        A state-triggered automation is evaluated constantly without matching; ranked by
+        time alone those evaluations fill the listing and "latest" picks one of them. Times
+        are compared as datetimes, because local-time text sorts wrongly when the clocks
+        go back -- 02:10+01:00 comes after 02:30+02:00.
+        """
+        oldest = datetime.min.replace(tzinfo=dt_util.UTC)
+        return sorted(
+            runs,
+            key=lambda run: (not run.get("not_triggered"), dt_util.parse_datetime(run["start"] or "") or oldest),
+            reverse=True,
+        )
+
+    def _trace_detail(self, store: dict[str, Any], key: str, entity_id: str, run_id: str) -> dict[str, Any]:
+        """Return one run step by step. run_id "latest" means the newest run."""
+        traces = self._bucket_traces(store.get(key))
+        if run_id.lower() == "latest":
+            runs = self._trace_runs(store, key)
+            run_id = runs[0]["run_id"] if runs else ""
+
+        trace = next((t for t in traces if t.run_id == run_id), None)
+        if trace is None:
+            return {
+                "entity_id": entity_id,
+                "error": f"no run {run_id!r}. Call without run_id to list the stored runs",
+            }
+
+        full = _plain(trace.as_extended_dict())
+        timestamp = full.get("timestamp") or {}
+
+        steps: list[dict[str, Any]] = []
+        budget = MAX_TRACE_RESULT_CHARS
+        truncated = False
+        for path, elements in (full.get("trace") or {}).items():
+            for element in elements:
+                step: dict[str, Any] = {"path": path, "time": _iso_to_local(element.get("timestamp"))}
+                for field in ("result", "error", "child_id", "template_errors"):
+                    if field in element:
+                        step[field] = _clip_json(element[field], MAX_TRACE_VALUE_CHARS)
+                if variables := element.get("changed_variables"):
+                    step["changed_variables"] = {
+                        name: _clip_json(value, MAX_TRACE_VALUE_CHARS) for name, value in variables.items()
+                    }
+                budget -= len(json_dumps(step))
+                if budget < 0 and steps:
+                    truncated = True
+                    break
+                steps.append(step)
+            if truncated:
+                break
+
+        result = {
+            "entity_id": entity_id,
+            "run_id": full.get("run_id"),
+            "start": _iso_to_local(timestamp.get("start")),
+            "finish": _iso_to_local(timestamp.get("finish")),
+            "state": full.get("state"),
+            "script_execution": full.get("script_execution"),
+            "trigger": full.get("trigger"),
+            "error": full.get("error"),
+            "steps": steps,
+            "truncated": truncated,
+            "config": _clip_json(full.get("config"), MAX_TRACE_CONFIG_CHARS),
+        }
+        if full.get("blueprint_inputs"):
+            result["blueprint_inputs"] = _clip_json(full["blueprint_inputs"], MAX_TRACE_CONFIG_CHARS)
+        return {key: value for key, value in result.items() if value is not None}
 
     async def get_history(
         self,

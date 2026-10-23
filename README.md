@@ -60,6 +60,48 @@ from `GET /models`, labelled with each model's context window.
 | Web search / code interpreter | ❌ | Responses-API-only features, not available |
 | Embeddings, audio | ❌ | No endpoint |
 
+### Adding a conversation agent
+
+Adding an agent asks only for a name and the tools to give it — **Control devices**, **Read Home
+Assistant logs**, **Read Node-RED flows** — plus the Node-RED URL and login if you tick that one.
+Everything else starts on the recommended settings, and the function YAML is generated for you.
+The log and Node-RED tools are read-only and say so to Home Assistant. Leaving **Control devices**
+unticked leaves Lumo with read-only tools only: Home Assistant's own device control and exposed
+scripts are withheld too (the **Control devices** switch in the agent's settings). Tick **Customize everything**
+for the full settings, prefilled; **Reconfigure** always opens them.
+
+Give Lumo its own read-only Node-RED user. The login is stored in the agent's function YAML, in
+Home Assistant's `.storage`, like every other function credential.
+
+## Conversation history and the chat card
+
+The Assist dialog forgets its messages when you close it, and Home Assistant drops a conversation
+after five minutes. Lumo keeps each signed-in user's last 20 messages with each agent in
+`.storage/lumo.history` and continues from them, so closing the dialog no longer loses the thread.
+History is per agent, so what one agent said is never replayed into another. It expires after 30
+days and is deleted with the user. Voice satellites have no user and are never remembered.
+
+- Turn it off per agent with **Remember conversations** in the agent's options.
+- `lumo.clear_history` forgets your own history. Run without a user, as most automations are, it
+  does nothing unless `all: true` is set, which forgets everyone's and is refused to non-admins.
+
+To *see* the history, open **Lumo** in the sidebar: the same chat, full page. Who sees that entry
+is the **Show Lumo in the sidebar** setting on the Lumo entry (Reconfigure) — hidden, admins only
+(the default) or everyone. Or put the chat on a dashboard as a card. The card loads automatically, so no
+resource entry is needed:
+
+```yaml
+type: custom:lumo-chat-card
+agent_id: conversation.lumo   # optional
+title: Lumo                   # optional
+```
+
+The card shows only your own messages. Replies stream in as they are written and are rendered
+as markdown; **New** forgets your history with that agent and starts over. Nothing outside `.storage` is ever written.
+
+The integration also adds sensors for input/output tokens and, on the anonymous tier, requests
+remaining per model, and raises a repair issue when the key is rejected or the quota is spent.
+
 ## What changed from OmniConv
 
 The load-bearing difference: **Lumo has no Responses API.** `POST /api/ai/v1/responses` returns 404.
@@ -110,7 +152,8 @@ subentry-based conversation/AI-task configuration model.
 
 Ready-made functions and prompts live in [`examples/`](examples/) — a home-inventory tool that lets
 the agent give advice about the devices you actually own, richer light control, named scene modes,
-recorder history lookups, a log reader that diagnoses what is broken, and prompts that turn the
+recorder history lookups, a log reader that diagnoses what is broken, debugging tools that read
+automation traces, evaluate templates and dump any entity's attributes, and prompts that turn the
 agent into a dashboard designer, a log triage assistant, or a terse everyday assistant.
 
 ## Tests

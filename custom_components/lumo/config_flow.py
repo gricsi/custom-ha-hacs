@@ -34,15 +34,27 @@ from homeassistant.helpers.selector import (
 )
 from homeassistant.helpers.typing import VolDictType
 
+from .presets import (
+    CONF_CUSTOMIZE,
+    CONF_NODE_RED_PASSWORD,
+    CONF_NODE_RED_URL,
+    CONF_NODE_RED_USERNAME,
+    CONF_TOOLS,
+    TOOL_PRESETS,
+    quick_setup_options,
+)
+from .history import SIDEBAR_VISIBILITIES
 from .const import (
-    CONF_ATTACH_USERNAME,
+    CONF_DEVICE_CONTROL,
+    CONF_SIDEBAR,
+    DEFAULT_SIDEBAR,
+    CONF_REMEMBER_HISTORY,
     CONF_BASE_URL,
     CONF_CHAT_MODEL,
     CONF_CONTEXT_THRESHOLD,
     CONF_CONTEXT_TRUNCATE_STRATEGY,
     CONF_ENTITIES_PROMPT,
     CONF_FUNCTIONS,
-    CONF_MAX_FUNCTION_CALLS_PER_CONVERSATION,
     CONF_MAX_TOKENS,
     CONF_PERFORMANCE_TRACING,
     CONF_PROMPT,
@@ -53,14 +65,12 @@ from .const import (
     CONF_TOP_P,
     CONTEXT_TRUNCATE_STRATEGIES,
     DEFAULT_AI_TASK_NAME,
-    DEFAULT_ATTACH_USERNAME,
     DEFAULT_CONF_BASE_URL,
     DEFAULT_CONF_FUNCTIONS,
     DEFAULT_CONTEXT_THRESHOLD,
     DEFAULT_CONTEXT_TRUNCATE_STRATEGY,
     DEFAULT_CONVERSATION_NAME,
     DEFAULT_ENTITIES_PROMPT,
-    DEFAULT_MAX_FUNCTION_CALLS_PER_CONVERSATION,
     DEFAULT_NAME,
     DEFAULT_SKIP_AUTHENTICATION,
     DOMAIN,
@@ -89,6 +99,11 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Optional(CONF_API_KEY): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
         vol.Optional(CONF_BASE_URL, default=DEFAULT_CONF_BASE_URL): str,
         vol.Optional(CONF_SKIP_AUTHENTICATION, default=DEFAULT_SKIP_AUTHENTICATION): bool,
+        vol.Optional(CONF_SIDEBAR, default=DEFAULT_SIDEBAR): SelectSelector(
+            SelectSelectorConfig(
+                options=list(SIDEBAR_VISIBILITIES), translation_key=CONF_SIDEBAR, mode=SelectSelectorMode.DROPDOWN
+            )
+        ),
     }
 )
 
@@ -198,6 +213,15 @@ class LumoConfigFlow(ConfigFlow, domain=DOMAIN):
         }
 
 
+KEPT_WHEN_RECOMMENDED = (
+    CONF_DEVICE_CONTROL,
+    CONF_FUNCTIONS,
+    CONF_REMEMBER_HISTORY,
+    CONF_CONTEXT_THRESHOLD,
+    CONF_CONTEXT_TRUNCATE_STRATEGY,
+)
+
+
 class LumoSubentryFlowHandler(ConfigSubentryFlow):
     """Flow for managing Lumo subentries."""
 
@@ -239,9 +263,49 @@ class LumoSubentryFlowHandler(ConfigSubentryFlow):
         """Add a subentry."""
         if self._subentry_type == "ai_task_data":
             self.options = RECOMMENDED_AI_TASK_OPTIONS.copy()
-        else:
-            self.options = RECOMMENDED_CONVERSATION_OPTIONS.copy()
-        return await self.async_step_init()
+            return await self.async_step_init()
+
+        # A new conversation agent asks only for what cannot be defaulted: which tools,
+        # and where Node-RED is. "Customize" continues into the full settings, prefilled.
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                self.options = quick_setup_options(user_input)
+            except ValueError as err:
+                errors[str(err)] = f"{err}_required"
+            else:
+                if user_input[CONF_CUSTOMIZE]:
+                    # Off, or the first step's recommended path would save without the rest.
+                    self.options |= {CONF_NAME: user_input[CONF_NAME], CONF_RECOMMENDED: False}
+                    return await self.async_step_init()
+                return self.async_create_entry(title=user_input[CONF_NAME], data=self.options)
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(
+                    {
+                        vol.Required(CONF_NAME, default=DEFAULT_CONVERSATION_NAME): str,
+                        vol.Optional(CONF_TOOLS, default=["execute_services"]): SelectSelector(
+                            SelectSelectorConfig(
+                                options=list(TOOL_PRESETS),
+                                translation_key=CONF_TOOLS,
+                                multiple=True,
+                                mode=SelectSelectorMode.LIST,
+                            )
+                        ),
+                        vol.Optional(CONF_NODE_RED_URL): TextSelector(TextSelectorConfig(type=TextSelectorType.URL)),
+                        vol.Optional(CONF_NODE_RED_USERNAME): str,
+                        vol.Optional(CONF_NODE_RED_PASSWORD): TextSelector(
+                            TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                        ),
+                        vol.Required(CONF_CUSTOMIZE, default=False): bool,
+                    }
+                ),
+                user_input or {},
+            ),
+            errors=errors,
+        )
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         """Handle reconfiguration of a subentry."""
@@ -292,6 +356,9 @@ class LumoSubentryFlowHandler(ConfigSubentryFlow):
                 user_input.pop(CONF_LLM_HASS_API, None)
 
             if user_input[CONF_RECOMMENDED]:
+                # Recommended replaces the model settings, not the agent's functions or
+                # history settings, which this step does not show.
+                user_input = {k: options[k] for k in KEPT_WHEN_RECOMMENDED if k in options} | user_input
                 if self._is_new:
                     return self.async_create_entry(title=user_input.pop(CONF_NAME), data=user_input)
                 return self.async_update_and_abort(
@@ -358,11 +425,8 @@ class LumoSubentryFlowHandler(ConfigSubentryFlow):
             step_schema.update(
                 {
                     vol.Optional(CONF_FUNCTIONS, default=DEFAULT_CONF_FUNCTIONS_STR): TemplateSelector(),
-                    vol.Optional(
-                        CONF_MAX_FUNCTION_CALLS_PER_CONVERSATION,
-                        default=DEFAULT_MAX_FUNCTION_CALLS_PER_CONVERSATION,
-                    ): int,
-                    vol.Optional(CONF_ATTACH_USERNAME, default=DEFAULT_ATTACH_USERNAME): BooleanSelector(),
+                    vol.Optional(CONF_DEVICE_CONTROL, default=True): BooleanSelector(),
+                    vol.Optional(CONF_REMEMBER_HISTORY, default=True): BooleanSelector(),
                     vol.Optional(CONF_CONTEXT_THRESHOLD, default=DEFAULT_CONTEXT_THRESHOLD): int,
                     vol.Optional(
                         CONF_CONTEXT_TRUNCATE_STRATEGY,

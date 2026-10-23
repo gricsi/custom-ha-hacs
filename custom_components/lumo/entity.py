@@ -25,6 +25,7 @@ from homeassistant.config_entries import ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers import llm
 from homeassistant.helpers.entity import Entity
 from homeassistant.util import slugify
@@ -40,6 +41,7 @@ from openai.types.chat import (
     ChatCompletionToolMessageParam,
     ChatCompletionUserMessageParam,
 )
+
 try:
     # Home Assistant core ships probatio (an install_requires of the
     # homeassistant package itself) and core's own openai_conversation uses it
@@ -52,6 +54,7 @@ except ImportError:  # pragma: no cover - older Home Assistant
 
 from .const import (
     CONF_CHAT_MODEL,
+    CONF_CONTEXT_THRESHOLD,
     CONF_MAX_TOKENS,
     CONF_PERFORMANCE_TRACING,
     CONF_REASONING_EFFORT,
@@ -66,7 +69,10 @@ from .const import (
     RECOMMENDED_REASONING_EFFORT,
     RECOMMENDED_TEMPERATURE,
     RECOMMENDED_TOP_P,
+    DEFAULT_CONTEXT_THRESHOLD,
 )
+
+from .sensor import async_record_usage
 
 if TYPE_CHECKING:
     from . import LumoConfigEntry
@@ -116,6 +122,28 @@ class PerformanceTracker:
             LOGGER.info("  %s: %.3fs (%.1f%%)", name, elapsed, percentage)
 
         LOGGER.info("=" * 80)
+
+
+def _set_repair_issue(hass: HomeAssistant, entry: LumoConfigEntry, active: str | None) -> None:
+    """Raise the `active` repair issue for the entry and remove the others; None removes all.
+
+    These are what a user can act on: a rejected key (Reconfigure) or a spent quota
+    (wait for the window, or add a key). Anything else is transient and stays in the log.
+    """
+    for key, severity in (("invalid_api_key", ir.IssueSeverity.ERROR), ("quota_exhausted", ir.IssueSeverity.WARNING)):
+        issue_id = f"{key}_{entry.entry_id}"
+        if key == active:
+            ir.async_create_issue(
+                hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=severity,
+                translation_key=key,
+                translation_placeholders={"title": entry.title},
+            )
+        else:
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
 
 
 def lumo_error_detail(err: openai.APIStatusError) -> str:
@@ -173,9 +201,7 @@ def _serialize_json(obj: Any) -> str:
     return orjson.dumps(obj).decode("utf-8")
 
 
-def _format_tool(
-    tool: llm.Tool, custom_serializer: Callable[[Any], Any] | None
-) -> ChatCompletionFunctionToolParam:
+def _format_tool(tool: llm.Tool, custom_serializer: Callable[[Any], Any] | None) -> ChatCompletionFunctionToolParam:
     """Format a HA tool as a chat-completions function tool."""
     # CustomFunctionTool carries the YAML spec's `parameters` block verbatim in
     # raw_parameters: it is already JSON Schema, so converting it would be wrong.
@@ -195,6 +221,34 @@ def _format_tool(
     )
 
 
+def tool_result_data(content: Any) -> Any:
+    """Return a tool result's payload: `.result.data` from 2026.10, `.tool_result` before."""
+    result = getattr(content, "result", None)
+    return content.tool_result if result is None else result.data
+
+
+def trim_messages(messages: list[ChatCompletionMessageParam], threshold: int) -> list[ChatCompletionMessageParam]:
+    """Drop the oldest turns until the conversation is estimated under `threshold` tokens.
+
+    The estimate is four characters to a token, which is close enough to keep a long
+    conversation (or a restored history) from crowding out the current turn. Whole turns go,
+    oldest first, each from its user message on, so a tool call is never separated from its
+    result; the current turn always stays even if it alone is over. System messages are
+    never dropped and not counted: exposed entities can make the prompt alone exceed the
+    threshold, which would otherwise discard all history every turn. Zero disables trimming.
+    """
+    system = [m for m in messages if m["role"] == "system"]
+    conversation_only = [m for m in messages if m["role"] != "system"]
+    turn_starts = [i for i, m in enumerate(conversation_only) if m["role"] == "user"]
+    if not threshold or not turn_starts:
+        return messages
+    for start in [0, *turn_starts]:
+        kept = conversation_only[start:]
+        if len(_serialize_json(kept)) // 4 <= threshold or start == turn_starts[-1]:
+            break
+    return messages if start == 0 else system + kept
+
+
 def _convert_content_to_messages(
     chat_content: list[conversation.Content],
 ) -> list[ChatCompletionMessageParam]:
@@ -207,7 +261,7 @@ def _convert_content_to_messages(
                 ChatCompletionToolMessageParam(
                     role="tool",
                     tool_call_id=content.tool_call_id,
-                    content=_serialize_json(content.tool_result),
+                    content=_serialize_json(tool_result_data(content)),
                 )
             )
             continue
@@ -248,6 +302,7 @@ def _convert_content_to_messages(
 async def _transform_stream(
     chat_log: conversation.ChatLog,
     stream: AsyncStream[ChatCompletionChunk],
+    entry_id: str,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict | conversation.ToolResultContentDeltaDict]:
     """Transform a Lumo chat-completions delta stream into HA format."""
     # index -> partial tool call. Lumo currently emits a complete tool call in a
@@ -255,6 +310,9 @@ async def _transform_stream(
     # fragments across chunks, so accumulate either way.
     pending_tool_calls: dict[int, dict[str, str]] = {}
     started = False
+
+    # Tool calls whose arguments were not JSON, answered after the assistant message.
+    rejected: list[conversation.ToolResultContentDeltaDict] = []
 
     def flush_tool_calls() -> list[llm.ToolInput]:
         tool_inputs: list[llm.ToolInput] = []
@@ -264,9 +322,19 @@ async def _transform_stream(
             try:
                 tool_args = json.loads(raw_arguments)
             except json.JSONDecodeError as err:
-                raise HomeAssistantError(
-                    f"Lumo returned malformed arguments for tool {call['name']!r}: {raw_arguments}"
-                ) from err
+                # This used to fail the whole turn. External means core will not run it,
+                # not even with empty arguments; the error result below lets the model
+                # see what went wrong and resend the call.
+                LOGGER.warning("Lumo sent malformed arguments for tool %s: %s", call["name"], raw_arguments)
+                tool_inputs.append(llm.ToolInput(id=call["id"], tool_name=call["name"], tool_args={}, external=True))
+                rejected.append(
+                    _tool_result_delta(
+                        call["id"],
+                        call["name"],
+                        {"error": f"The arguments were not valid JSON ({err}). Resend the call with valid JSON."},
+                    )
+                )
+                continue
             tool_inputs.append(
                 llm.ToolInput(
                     id=call["id"],
@@ -290,6 +358,7 @@ async def _transform_stream(
                 }
             )
             _log_remaining_limits(chunk.usage)
+            async_record_usage(chat_log.hass, entry_id, chunk.usage)
 
         if not chunk.choices:
             continue
@@ -346,6 +415,26 @@ async def _transform_stream(
             yield {"role": "assistant"}
         yield {"tool_calls": flush_tool_calls()}
 
+    for result in rejected:
+        yield result
+
+
+def _tool_result_delta(tool_call_id: str, tool_name: str, data: dict[str, Any]) -> dict[str, Any]:
+    """An error result for a tool call core did not run.
+
+    2026.10 reads `result`, an llm.ToolResult, and warns about `tool_result`; earlier cores
+    read only `tool_result`. Both are set, so each finds the one it expects.
+    """
+    delta: dict[str, Any] = {
+        "role": "tool_result",
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_name,
+        "tool_result": data,
+    }
+    if (result_cls := getattr(llm, "ToolResult", None)) is not None:
+        delta["result"] = result_cls(data=data, error=True)
+    return delta
+
 
 class LumoBaseLLMEntity(Entity):
     """Lumo base LLM entity."""
@@ -368,6 +457,25 @@ class LumoBaseLLMEntity(Entity):
         self._cached_formatted_tools: list[ChatCompletionFunctionToolParam] | None = None
         self._cached_tools_hash: int | None = None
 
+    def _lumo_error(self, err: openai.OpenAIError) -> HomeAssistantError:
+        """Log a failed request, raise the repair issue it calls for, and say what went wrong."""
+        if isinstance(err, openai.RateLimitError):
+            detail = lumo_error_detail(err)
+            LOGGER.error("Rate limited by Lumo: %s", detail)
+            _set_repair_issue(self.hass, self.entry, "quota_exhausted")
+            return HomeAssistantError(f"Lumo rate limit reached: {detail}")
+        if isinstance(err, openai.AuthenticationError):
+            detail = lumo_error_detail(err)
+            LOGGER.error("Lumo rejected the API key: %s", detail)
+            _set_repair_issue(self.hass, self.entry, "invalid_api_key")
+            return HomeAssistantError(f"Lumo authentication failed: {detail}")
+        if isinstance(err, openai.APIStatusError):
+            detail = lumo_error_detail(err)
+            LOGGER.error("Error talking to Lumo (HTTP %s): %s", err.status_code, detail)
+            return HomeAssistantError(f"Error talking to Lumo: {detail}")
+        LOGGER.error("Error talking to Lumo: %s", err)
+        return HomeAssistantError("Error talking to Lumo")
+
     async def _async_handle_chat_log(
         self,
         chat_log: conversation.ChatLog,
@@ -381,6 +489,7 @@ class LumoBaseLLMEntity(Entity):
         perf.checkpoint("Start _async_handle_chat_log")
 
         messages = _convert_content_to_messages(chat_log.content)
+        messages = trim_messages(messages, options.get(CONF_CONTEXT_THRESHOLD, DEFAULT_CONTEXT_THRESHOLD))
         perf.checkpoint("Convert chat content to chat-completions format")
 
         model_args: dict[str, Any] = {
@@ -465,28 +574,15 @@ class LumoBaseLLMEntity(Entity):
                         [
                             content
                             async for content in chat_log.async_add_delta_content_stream(
-                                self.entity_id, _transform_stream(chat_log, stream)
+                                self.entity_id, _transform_stream(chat_log, stream, self.entry.entry_id)
                             )
                         ]
                     )
                 )
 
                 perf.checkpoint("Streaming & content conversion completed")
-            except openai.RateLimitError as err:
-                detail = lumo_error_detail(err)
-                LOGGER.error("Rate limited by Lumo: %s", detail)
-                raise HomeAssistantError(f"Lumo rate limit reached: {detail}") from err
-            except openai.AuthenticationError as err:
-                detail = lumo_error_detail(err)
-                LOGGER.error("Lumo rejected the API key: %s", detail)
-                raise HomeAssistantError(f"Lumo authentication failed: {detail}") from err
-            except openai.APIStatusError as err:
-                detail = lumo_error_detail(err)
-                LOGGER.error("Error talking to Lumo (HTTP %s): %s", err.status_code, detail)
-                raise HomeAssistantError(f"Error talking to Lumo: {detail}") from err
             except openai.OpenAIError as err:
-                LOGGER.error("Error talking to Lumo: %s", err)
-                raise HomeAssistantError("Error talking to Lumo") from err
+                raise self._lumo_error(err) from err
 
             if not chat_log.unresponded_tool_results:
                 perf.checkpoint("No more tool calls, conversation complete")
@@ -508,13 +604,11 @@ class LumoBaseLLMEntity(Entity):
             try:
                 stream = await client.chat.completions.create(**final_args)
                 async for _content in chat_log.async_add_delta_content_stream(
-                    self.entity_id, _transform_stream(chat_log, stream)
+                    self.entity_id, _transform_stream(chat_log, stream, self.entry.entry_id)
                 ):
                     pass
-            except openai.APIStatusError as err:
-                raise HomeAssistantError(f"Error talking to Lumo: {lumo_error_detail(err)}") from err
             except openai.OpenAIError as err:
-                raise HomeAssistantError("Error talking to Lumo") from err
+                raise self._lumo_error(err) from err
 
             if chat_log.unresponded_tool_results:
                 raise HomeAssistantError(
@@ -522,6 +616,7 @@ class LumoBaseLLMEntity(Entity):
                     "it. The most likely cause is a custom function raising an error on every call."
                 )
 
+        _set_repair_issue(self.hass, self.entry, None)
         perf.summary()
 
 

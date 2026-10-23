@@ -12,12 +12,14 @@
         "data": {
           "api_key": "[%key:common::config_flow::data::api_key%]",
           "base_url": "Base URL",
-          "skip_authentication": "Skip API authentication"
+          "skip_authentication": "Skip API authentication",
+          "sidebar": "Show Lumo in the sidebar"
         },
         "data_description": {
           "api_key": "Your Lumo API key from the Manage keys page at lumo.proton.me. Optional: Lumo also answers unauthenticated requests, on a lower quota.",
           "base_url": "The Lumo API endpoint. Change this only if Proton moves the path, or to point the integration at another OpenAI-compatible server.",
-          "skip_authentication": "Skip the reachability and API-key check during setup. Useful if the endpoint is temporarily unreachable."
+          "skip_authentication": "Skip the reachability and API-key check during setup. Useful if the endpoint is temporarily unreachable.",
+          "sidebar": "A full-page Lumo chat with your saved conversation. Hidden, for admins only, or for every user."
         }
       },
       "reconfigure": {
@@ -26,12 +28,14 @@
         "data": {
           "api_key": "[%key:common::config_flow::data::api_key%]",
           "base_url": "Base URL",
-          "skip_authentication": "Skip API authentication"
+          "skip_authentication": "Skip API authentication",
+          "sidebar": "Show Lumo in the sidebar"
         },
         "data_description": {
           "api_key": "Your Lumo API key from the Manage keys page at lumo.proton.me. Prefilled with the key in use. Clear it to switch to the anonymous tier, which has a lower quota.",
           "base_url": "The Lumo API endpoint. Change this only if Proton moves the path, or to point the integration at another OpenAI-compatible server.",
-          "skip_authentication": "Skip the reachability and API-key check when saving. Useful if the endpoint is temporarily unreachable."
+          "skip_authentication": "Skip the reachability and API-key check when saving. Useful if the endpoint is temporarily unreachable.",
+          "sidebar": "A full-page Lumo chat with your saved conversation. Hidden, for admins only, or for every user."
         }
       }
     },
@@ -50,6 +54,24 @@
         "entry_not_loaded": "Cannot add things while the configuration is disabled."
       },
       "step": {
+        "user": {
+          "title": "Add a Lumo conversation agent",
+          "description": "Pick what Lumo may do. Everything else starts on the recommended settings, and you can change any of it later with Reconfigure.",
+          "data": {
+            "name": "Name",
+            "tools": "Tools",
+            "node_red_url": "Node-RED URL",
+            "node_red_username": "Node-RED username",
+            "node_red_password": "Node-RED password",
+            "customize": "Customize everything"
+          },
+          "data_description": {
+            "tools": "Reading the log and the Node-RED flows is read-only. Controlling devices calls Home Assistant actions.",
+            "node_red_url": "Only for Node-RED. The address of the Node-RED editor, e.g. http://192.168.1.10:1880 — the HA host's IP, not a container name.",
+            "node_red_username": "Leave empty if the Node-RED editor has no login. Give Lumo a read-only Node-RED user.",
+            "customize": "Continue to the full settings — prompt, model, functions — prefilled from this form."
+          }
+        },
         "init": {
           "data": {
             "name": "Name",
@@ -86,19 +108,22 @@
           "title": "Functions and context",
           "data": {
             "functions": "Functions",
-            "max_function_calls_per_conversation": "Maximum function calls per conversation",
-            "attach_username": "Attach username to message",
             "context_threshold": "Context threshold",
-            "context_truncate_strategy": "Context truncation strategy when exceeding threshold"
+            "context_truncate_strategy": "Context truncation strategy when exceeding threshold",
+            "remember_history": "Remember conversations",
+            "device_control": "Control devices"
           },
           "data_description": {
             "functions": "Tools the model may call, in OmniConv's YAML function format.",
-            "max_function_calls_per_conversation": "Limits how many times the model can use tools in one turn.",
-            "attach_username": "Include the requesting Home Assistant username in the prompt.",
             "context_threshold": "Maximum number of tokens to keep in the conversation history before shortening it.",
-            "context_truncate_strategy": "Method used to shorten conversation history when it exceeds the threshold."
+            "context_truncate_strategy": "Method used to shorten conversation history when it exceeds the threshold.",
+            "remember_history": "Keep each user's last turns in .storage so a new Assist conversation continues where the last one ended. Users without a login (voice satellites) are never remembered.",
+            "device_control": "Off: Lumo can only use tools that read — no Assist device control, no scripts, and only custom functions that declare read_only: true."
           }
         }
+      },
+      "error": {
+        "node_red_url_required": "Enter the Node-RED URL, or untick Read Node-RED flows."
       }
     },
     "ai_task_data": {
@@ -142,6 +167,20 @@
         "high": "High",
         "max": "Maximum"
       }
+    },
+    "tools": {
+      "options": {
+        "execute_services": "Control devices",
+        "read_logs": "Read Home Assistant logs",
+        "node_red_flows": "Read Node-RED flows"
+      }
+    },
+    "sidebar": {
+      "options": {
+        "hidden": "Hidden",
+        "admin": "Admins only",
+        "everyone": "Everyone"
+      }
     }
   },
   "services": {
@@ -162,11 +201,31 @@
           "description": "Images to include in the request. Lumo has no document input, so only images are accepted."
         }
       }
+    },
+    "clear_history": {
+      "name": "Clear conversation history",
+      "description": "Forget the saved Lumo conversations of the user who runs this. Run without a user, as most automations do, it does nothing unless All users is set.",
+      "fields": {
+        "all": {
+          "name": "All users",
+          "description": "Forget every user's saved conversations. Refused when run by a non-admin user."
+        }
+      }
     }
   },
   "exceptions": {
     "invalid_config_entry": {
       "message": "Invalid configuration entry {config_entry}"
+    }
+  },
+  "issues": {
+    "invalid_api_key": {
+      "title": "Lumo rejected the API key for {title}",
+      "description": "Lumo answered with \"invalid or expired API key\", so every request through {title} fails. Create a new key on the Manage keys page at lumo.proton.me, then go to Settings → Devices & services → Lumo → the three-dot menu on {title} → Reconfigure. Clear the key there to use the anonymous tier instead. This goes away after the next successful reply."
+    },
+    "quota_exhausted": {
+      "title": "Lumo quota used up for {title}",
+      "description": "Lumo is refusing requests through {title} because the request quota for the current window is spent. It comes back on its own when the window resets; on the anonymous tier, adding an API key under Reconfigure raises the limit. The Lumo … requests remaining sensors show what is left. This goes away after the next successful reply."
     }
   }
 }

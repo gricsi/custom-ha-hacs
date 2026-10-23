@@ -28,12 +28,15 @@ CONF_TEMPERATURE = "temperature"
 CONF_TOP_P = "top_p"
 CONF_PAYLOAD_TEMPLATE = "payload_template"
 
-CONF_MAX_FUNCTION_CALLS_PER_CONVERSATION = "max_function_calls_per_conversation"
 CONF_FUNCTIONS = "functions"
-CONF_ATTACH_USERNAME = "attach_username"
 CONF_CONTEXT_THRESHOLD = "context_threshold"
 CONF_CONTEXT_TRUNCATE_STRATEGY = "context_truncate_strategy"
 CONF_PERFORMANCE_TRACING = "performance_tracing"
+CONF_REMEMBER_HISTORY = "remember_history"
+CONF_SIDEBAR = "sidebar"
+CONF_DEVICE_CONTROL = "device_control"
+# Who sees Lumo in the sidebar: "hidden", "admin" or "everyone".
+DEFAULT_SIDEBAR = "admin"
 
 # Fallbacks only. The live model list is fetched from GET {base_url}/models, which
 # is what the config flow offers in its dropdown. Keep these in sync loosely; the
@@ -66,8 +69,6 @@ DEFAULT_REASONING_EFFORT = "medium"
 RECOMMENDED_REASONING_EFFORT = "medium"
 REASONING_EFFORTS: list[str] = ["none", "medium", "high", "max"]
 
-DEFAULT_MAX_FUNCTION_CALLS_PER_CONVERSATION = 1
-DEFAULT_ATTACH_USERNAME = False
 
 # Ceiling on a single custom function's result, in characters. Every result is
 # appended to the chat log and the whole log is re-sent on each of the up to

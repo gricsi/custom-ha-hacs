@@ -18,9 +18,10 @@ its own pinned packages (`hassil`, `xmltodict`, `lxml`, `SQLAlchemy`, …) at mo
 `pip install homeassistant` alone fails at collection. The script reads those pins off the core you
 just installed rather than from a list here, which would drift with every HA release.
 
-Tests run against real Home Assistant, with a `FakeHass` supplying the three things the code under
-test actually uses (`hass.data`, `hass.config.path`, `hass.async_add_executor_job`). No event loop,
-no config entry, no async plugin.
+Tests run against real Home Assistant. The `read_logs` tests use a `FakeHass` supplying the three
+things that code actually uses (`hass.data`, `hass.config.path`, `hass.async_add_executor_job`);
+the `render_template` and `get_traces` tests build a bare real `HomeAssistant` instead (see below).
+Either way: no config entry, no async plugin — `asyncio.run()` is enough.
 
 ## What is covered
 
@@ -50,4 +51,52 @@ un-skip them would have them check a stub against a stub, which passes whatever 
 only thing they are for is the real class. Until then the values they guard are verified by
 reading core, not by this suite.
 
-Nothing else in the integration has tests yet.
+`test_render_template.py` — the `render_template` native function: rendering states and
+attributes, errors returned as data rather than raised, the will-timeout refusal of a slow
+template, and the result clip. These run against a real `HomeAssistant` instance instead of a
+`FakeHass`, because rendering goes through `Template`, its sandbox and its timeout thread — a fake
+would only test itself. A bare instance needs no config entry; it must be built inside the running
+loop, which is what each test's `run()` does.
+
+`test_get_traces.py` — the `get_traces` native function, at all three levels (everything, one
+entity, one run). The traces are the real `AutomationTrace`/`ScriptTrace` classes filled with real
+`TraceElement`s in the real `TraceBuckets` container, for the same reason as the real-records test
+in `test_read_logs.py`: `hass.data["trace"]` and the trace dict shapes are not public API, so only
+the genuine classes notice core reshaping them. One test builds the pre-2026.9 store shape (a plain
+`LimitedSizeDict` per entry), which `manifest.json` still allows.
+
+`test_history.py` — the per-user history in `.storage/lumo.history`: seeding a fresh chat log,
+leaving a live one alone, per-user isolation, text-only and capped storage, surviving a restart, the
+agent's restore-then-save wiring, and that nothing but its own storage file is ever written (a
+`configuration.yaml` and a Node-RED `flows.json` are checked byte for byte).
+
+`test_tool_result.py` — the 2026.10 `ToolResult` migration in both directions, stubbed because the
+suite pins 2026.9.
+
+`test_context_threshold.py` — the context threshold option: what is dropped, what is always kept
+(system prompt, the current turn with its tool calls), and that the option reaches the request.
+
+`test_options_are_used.py` — every option the config flow offers is read somewhere else in the
+integration, and the UI labels no option the flow has dropped. It reads the source rather than running
+the flow; the allowlist at the top names the exceptions and why.
+
+`test_usage_sensors.py` — token totals, the per-tier requests-remaining sensors, isolation between
+config entries, and one streamed response reaching its entry's sensors. The harness calls
+`loader.async_setup(hass)` because writing state for an entity added without a platform looks its
+integration up.
+
+`test_repairs.py` — a rejected key and a spent quota each raise their repair issue, the next
+successful reply removes it, and other API errors raise none.
+
+`test_chat_card.py` — `lumo/history` returns the caller's turns only (a `user_id` in the message
+is ignored), and setup serves the card and adds it to every dashboard. It also covers `lumo/chat`
+(the reply streamed as events, then the result, through a real chat log) and `lumo/history/clear`
+(only the caller's history with that one agent). The card's JavaScript has no tests in this suite; it
+was smoke-tested once in jsdom against a fake `hass`, outside the repo.
+
+`test_quick_setup.py` — the short form for a new conversation agent: the generated function YAML,
+the Node-RED URL and login, the read-only annotations, that the presets still match
+`examples/function/*/README.md`, and the flow itself driven on a bare `HomeAssistant`. One test pins
+a fix: reconfiguring an agent on the recommended settings used to drop its function YAML.
+
+The rest of the config flow, the rest of streaming and the remaining executors have no tests yet.

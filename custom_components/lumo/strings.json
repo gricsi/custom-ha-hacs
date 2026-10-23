@@ -170,5 +170,15 @@
     "invalid_config_entry": {
       "message": "Invalid configuration entry {config_entry}"
     }
+  },
+  "issues": {
+    "invalid_api_key": {
+      "title": "Lumo rejected the API key for {title}",
+      "description": "Lumo answered with \"invalid or expired API key\", so every request through {title} fails. Create a new key on the Manage keys page at lumo.proton.me, then go to Settings → Devices & services → Lumo → the three-dot menu on {title} → Reconfigure. Clear the key there to use the anonymous tier instead. This goes away after the next successful reply."
+    },
+    "quota_exhausted": {
+      "title": "Lumo quota used up for {title}",
+      "description": "Lumo is refusing requests through {title} because the request quota for the current window is spent. It comes back on its own when the window resets; on the anonymous tier, adding an API key under Reconfigure raises the limit. The Lumo … requests remaining sensors show what is left. This goes away after the next successful reply."
+    }
   }
 }

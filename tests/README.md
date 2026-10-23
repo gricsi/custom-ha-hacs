@@ -85,4 +85,7 @@ config entries, and one streamed response reaching its entry's sensors. The harn
 `loader.async_setup(hass)` because writing state for an entity added without a platform looks its
 integration up.
 
+`test_repairs.py` — a rejected key and a spent quota each raise their repair issue, the next
+successful reply removes it, and other API errors raise none.
+
 The config flow itself, the rest of streaming and the remaining executors have no tests yet.

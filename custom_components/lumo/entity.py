@@ -25,6 +25,7 @@ from homeassistant.config_entries import ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers import llm
 from homeassistant.helpers.entity import Entity
 from homeassistant.util import slugify
@@ -121,6 +122,28 @@ class PerformanceTracker:
             LOGGER.info("  %s: %.3fs (%.1f%%)", name, elapsed, percentage)
 
         LOGGER.info("=" * 80)
+
+
+def _set_repair_issue(hass: HomeAssistant, entry: LumoConfigEntry, active: str | None) -> None:
+    """Raise the `active` repair issue for the entry and remove the others; None removes all.
+
+    These are what a user can act on: a rejected key (Reconfigure) or a spent quota
+    (wait for the window, or add a key). Anything else is transient and stays in the log.
+    """
+    for key, severity in (("invalid_api_key", ir.IssueSeverity.ERROR), ("quota_exhausted", ir.IssueSeverity.WARNING)):
+        issue_id = f"{key}_{entry.entry_id}"
+        if key == active:
+            ir.async_create_issue(
+                hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=severity,
+                translation_key=key,
+                translation_placeholders={"title": entry.title},
+            )
+        else:
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
 
 
 def lumo_error_detail(err: openai.APIStatusError) -> str:
@@ -504,10 +527,12 @@ class LumoBaseLLMEntity(Entity):
             except openai.RateLimitError as err:
                 detail = lumo_error_detail(err)
                 LOGGER.error("Rate limited by Lumo: %s", detail)
+                _set_repair_issue(self.hass, self.entry, "quota_exhausted")
                 raise HomeAssistantError(f"Lumo rate limit reached: {detail}") from err
             except openai.AuthenticationError as err:
                 detail = lumo_error_detail(err)
                 LOGGER.error("Lumo rejected the API key: %s", detail)
+                _set_repair_issue(self.hass, self.entry, "invalid_api_key")
                 raise HomeAssistantError(f"Lumo authentication failed: {detail}") from err
             except openai.APIStatusError as err:
                 detail = lumo_error_detail(err)
@@ -551,6 +576,7 @@ class LumoBaseLLMEntity(Entity):
                     "it. The most likely cause is a custom function raising an error on every call."
                 )
 
+        _set_repair_issue(self.hass, self.entry, None)
         perf.summary()
 
 

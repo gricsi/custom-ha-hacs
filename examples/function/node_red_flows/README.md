@@ -55,20 +55,20 @@ validates the port, the protocol, the credentials and the API in a single step.
     headers:
       Node-RED-API-Version: v2
     value_template: |-
-      {%- set nodes = value_json.flows if value_json.flows is defined else value_json %}
+      {%- set nodes = value_json.flows if value_json is mapping else value_json %}
       {%- set want = (tab | default('', true)) | trim | lower %}
       {%- set one = (node | default('', true)) | trim %}
       {%- if one != '' %}
       {% for n in nodes if n.id == one %}{% for k, v in n.items() if k not in ('x','y','info') %}{{ k }}: {{ v }}
       {% endfor %}{% endfor %}
       {%- elif want == '' %}
-      {% for n in nodes if n.type == 'tab' %}{{ n.label | trim }}
+      {% for n in nodes if n.get('type') == 'tab' %}{{ n.get('label', '') | trim }}
       {% endfor %}
       {%- else %}
       {%- set t = namespace(id='') %}
-      {%- for n in nodes if n.type == 'tab' and (n.label | trim | lower) == want %}{% set t.id = n.id %}{% endfor %}
+      {%- for n in nodes if n.get('type') == 'tab' and (n.get('label', '') | trim | lower) == want %}{% set t.id = n.id %}{% endfor %}
       {%- if t.id == '' %}No tab named "{{ tab }}". Call with no arguments to list the tab names.{% else %}
-      {% for n in nodes if n.z == t.id %}{{ n.id }} {{ n.type }} "{{ n.name | default(n.label, true) }}"{% if n.d %} DISABLED{% endif %}{% if n.action %} action={{ n.action }}{% endif %}{% if n.entityId %} entity={{ n.entityId | join(',') }}{% endif %}{% if n.entity_id %} entity={{ n.entity_id }}{% endif %}{% if n.data %} data={{ n.data }}{% endif %}{% if n.halt_if %} halt_if={{ n.halt_if_compare }} {{ n.halt_if }}{% endif %}{% if n.property %} prop={{ n.property }}{% endif %}{% if n.rules %} rules={{ n.rules }}{% endif %}{% if n.adr is defined %} modbus={{ n.dataType }} unit={{ n.unitid }} adr={{ n.adr }} qty={{ n.quantity }}{% endif %}{% if n.func %} code={{ n.func | replace('\n', '; ') | truncate(160, true, ' …') }}{% endif %} wires={{ n.wires | default([], true) }}
+      {% for n in nodes if n.get('z') == t.id %}{{ n.id }} {{ n.type }} "{{ n.get('name') or n.get('label', '') }}"{% if n.get('d') %} DISABLED{% endif %}{% if n.get('action') %} action={{ n.action }}{% endif %}{% if n.get('entityId') %} entity={{ n.entityId | join(',') }}{% endif %}{% if n.get('entity_id') %} entity={{ n.entity_id }}{% endif %}{% if n.get('data') %} data={{ n.data }}{% endif %}{% if n.get('halt_if') %} halt_if={{ n.get('halt_if_compare', '') }} {{ n.halt_if }}{% endif %}{% if n.get('property') %} prop={{ n.property }}{% endif %}{% if n.get('rules') %} rules={{ n.rules }}{% endif %}{% if 'adr' in n %} modbus={{ n.get('dataType', '') }} unit={{ n.get('unitid', '') }} adr={{ n.adr }} qty={{ n.get('quantity', '') }}{% endif %}{% if n.get('func') %} code={{ n.func | replace('\n', '; ') | truncate(160, true, ' …') }}{% endif %} wires={{ n.get('wires') or [] }}
       {% endfor %}
       {%- endif %}
       {%- endif %}

@@ -62,6 +62,15 @@ class ConversationHistory:
         data[user_id] = turns
         await self._store.async_save(data)
 
+    async def async_clear(self, user_id: str | None) -> None:
+        """Forget one user's turns, or everyone's when no user is given."""
+        data = await self._async_load()
+        if user_id is None:
+            data.clear()
+        else:
+            data.pop(user_id, None)
+        await self._store.async_save(data)
+
 
 @callback
 def async_get_history(hass: HomeAssistant) -> ConversationHistory:

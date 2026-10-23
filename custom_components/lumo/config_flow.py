@@ -20,6 +20,7 @@ from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import llm
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     NumberSelector,
     NumberSelectorConfig,
     SelectOptionDict,
@@ -34,6 +35,7 @@ from homeassistant.helpers.selector import (
 from homeassistant.helpers.typing import VolDictType
 
 from .const import (
+    CONF_REMEMBER_HISTORY,
     CONF_BASE_URL,
     CONF_CHAT_MODEL,
     CONF_CONTEXT_THRESHOLD,
@@ -353,6 +355,7 @@ class LumoSubentryFlowHandler(ConfigSubentryFlow):
             step_schema.update(
                 {
                     vol.Optional(CONF_FUNCTIONS, default=DEFAULT_CONF_FUNCTIONS_STR): TemplateSelector(),
+                    vol.Optional(CONF_REMEMBER_HISTORY, default=True): BooleanSelector(),
                     vol.Optional(CONF_CONTEXT_THRESHOLD, default=DEFAULT_CONTEXT_THRESHOLD): int,
                     vol.Optional(
                         CONF_CONTEXT_TRUNCATE_STRATEGY,

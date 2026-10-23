@@ -241,3 +241,109 @@ def test_the_agent_restores_before_and_saves_after_each_turn(monkeypatch) -> Non
         [("user", "Open the garage")],
         [("user", "Open the garage"), ("assistant", "reply 1"), ("user", "Close it again")],
     ]
+
+
+def test_clear_one_user_or_everyone() -> None:
+    async def body(hass: HomeAssistant) -> list[list[tuple[str, str]]]:
+        history = ConversationHistory(hass)
+        for user in ("alice", "bob", "carol"):
+            chat_log = new_log(hass, f"{user} here")
+            answer(chat_log, "hi")
+            await history.async_save(user, chat_log)
+
+        await history.async_clear("alice")
+        after_one = []
+        for user in ("alice", "bob"):
+            chat_log = new_log(hass, "again")
+            await history.async_restore(user, chat_log, AGENT)
+            after_one.append(texts(chat_log))
+
+        await history.async_clear(None)
+        carol = new_log(hass, "again")
+        await ConversationHistory(hass).async_restore("carol", carol, AGENT)  # re-read from disk
+        return [*after_one, texts(carol)]
+
+    alice, bob, carol = run(body)
+    assert alice == [("user", "again")]
+    assert bob[0] == ("user", "bob here")
+    assert carol == [("user", "again")]
+
+
+def test_clear_history_action_clears_the_caller_or_everyone() -> None:
+    from homeassistant.core import Context
+
+    from custom_components.lumo.const import DOMAIN
+    from custom_components.lumo.history import async_get_history
+    from custom_components.lumo.services import async_setup_services
+
+    async def restored(hass: HomeAssistant, user: str) -> list[tuple[str, str]]:
+        chat_log = new_log(hass, "again")
+        await async_get_history(hass).async_restore(user, chat_log, AGENT)
+        return texts(chat_log)[:-1]
+
+    async def body(hass: HomeAssistant) -> tuple[list, list, list]:
+        await async_setup_services(hass, {})
+        for user in ("alice", "bob"):
+            chat_log = new_log(hass, f"{user} here")
+            answer(chat_log, "hi")
+            await async_get_history(hass).async_save(user, chat_log)
+
+        await hass.services.async_call(DOMAIN, "clear_history", {}, blocking=True, context=Context(user_id="alice"))
+        alice, bob = await restored(hass, "alice"), await restored(hass, "bob")
+
+        await hass.services.async_call(DOMAIN, "clear_history", {}, blocking=True, context=Context())
+        return alice, bob, await restored(hass, "bob")
+
+    alice, bob, bob_after_all = run(body)
+    assert alice == []
+    assert bob == [("user", "bob here"), ("assistant", "hi")]
+    assert bob_after_all == []
+
+
+def test_an_agent_with_history_off_neither_restores_nor_saves(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from homeassistant.core import Context
+
+    from custom_components.lumo.const import CONF_REMEMBER_HISTORY
+    from custom_components.lumo.conversation import LumoEntity
+    from custom_components.lumo.history import async_get_history
+
+    async def fake_model(self, chat_log) -> None:
+        answer(chat_log, "ok")
+
+    async def no_llm_data(*args) -> None:
+        return None
+
+    monkeypatch.setattr(LumoEntity, "_async_handle_chat_log", fake_model)
+
+    async def body(hass: HomeAssistant) -> list[tuple[str, str]]:
+        seeded = new_log(hass, "from another agent")
+        answer(seeded, "remembered")
+        await async_get_history(hass).async_save("alice", seeded)
+
+        entity = LumoEntity(
+            SimpleNamespace(entry_id="e"),
+            SimpleNamespace(subentry_id="s", title="Lumo", data={CONF_REMEMBER_HISTORY: False}),
+        )
+        entity.hass = hass
+        entity.entity_id = AGENT
+        chat_log = new_log(hass, "private")
+        chat_log.async_provide_llm_data = no_llm_data
+        user_input = conversation.ConversationInput(
+            text="private",
+            context=Context(user_id="alice"),
+            conversation_id=None,
+            device_id=None,
+            satellite_id=None,
+            language="en",
+            agent_id=AGENT,
+        )
+        await entity._async_handle_message(user_input, chat_log)
+        assert texts(chat_log) == [("user", "private"), ("assistant", "ok")], "nothing was restored"
+
+        fresh = new_log(hass, "later")
+        await async_get_history(hass).async_restore("alice", fresh, AGENT)
+        return texts(fresh)[:-1]
+
+    assert run(body) == [("user", "from another agent"), ("assistant", "remembered")], "nothing was saved"

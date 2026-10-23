@@ -32,6 +32,7 @@ CONF_FUNCTIONS = "functions"
 CONF_CONTEXT_THRESHOLD = "context_threshold"
 CONF_CONTEXT_TRUNCATE_STRATEGY = "context_truncate_strategy"
 CONF_PERFORMANCE_TRACING = "performance_tracing"
+CONF_REMEMBER_HISTORY = "remember_history"
 
 # Fallbacks only. The live model list is fetched from GET {base_url}/models, which
 # is what the config flow offers in its dropdown. Keep these in sync loosely; the

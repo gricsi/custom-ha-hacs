@@ -17,3 +17,5 @@ generate_content:
           multiline: true
       example: |
         - /config/www/snapshot.jpg
+
+clear_history:

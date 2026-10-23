@@ -19,6 +19,7 @@ from .const import (
     CONF_FUNCTIONS,
     CONF_LLM_HASS_API,
     CONF_PROMPT,
+    CONF_REMEMBER_HISTORY,
     DEFAULT_CONF_FUNCTIONS,
     DOMAIN,
     LOGGER,
@@ -376,10 +377,12 @@ class LumoEntity(
                 LOGGER.info("⏱️  Load and extend custom function tools: %.3fs", elapsed)
                 start_time = time.time()
 
+        # No user means no history either way; this only decides whether one is kept.
+        user_id = user_input.context.user_id if options.get(CONF_REMEMBER_HISTORY, True) else None
         history = async_get_history(self.hass)
-        await history.async_restore(user_input.context.user_id, chat_log, self.entity_id)
+        await history.async_restore(user_id, chat_log, self.entity_id)
 
         await self._async_handle_chat_log(chat_log)
 
-        await history.async_save(user_input.context.user_id, chat_log)
+        await history.async_save(user_id, chat_log)
         return conversation.async_get_result_from_chat_log(user_input, chat_log)

@@ -1,6 +1,7 @@
 """Services for the Lumo integration.
 
-Only lumo.generate_content is registered. Upstream OmniConv also ships
+lumo.generate_content sends a one-off prompt; lumo.clear_history forgets saved
+conversations (see history.py). Upstream OmniConv also ships
 generate_image (DALL-E) and query_image; Lumo has no image endpoint, and
 query_image is subsumed by generate_content now that both models support vision.
 """
@@ -39,8 +40,10 @@ from .const import (
     RECOMMENDED_TOP_P,
 )
 from .entity import lumo_error_detail, async_prepare_files_for_prompt
+from .history import async_get_history
 
 SERVICE_GENERATE_CONTENT = "generate_content"
+SERVICE_CLEAR_HISTORY = "clear_history"
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -128,3 +131,9 @@ async def async_setup_services(hass: HomeAssistant, config: ConfigType) -> None:
         ),
         supports_response=SupportsResponse.ONLY,
     )
+
+    async def clear_history(call: ServiceCall) -> None:
+        """Forget the caller's saved conversation, or everyone's when run without a user."""
+        await async_get_history(hass).async_clear(call.context.user_id)
+
+    hass.services.async_register(DOMAIN, SERVICE_CLEAR_HISTORY, clear_history, schema=vol.Schema({}))

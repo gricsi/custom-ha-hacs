@@ -64,6 +64,7 @@ class LumoChatCard extends HTMLElement {
     const reply = { role: "assistant", content: "" };
     this._messages.push({ role: "user", content: text }, reply);
     this._renderMessages();
+    this._scrollToEnd(true); // you sent it: show it, even if you had scrolled up
     let done = null;
     try {
       // Events: {delta} as the reply is written, then {done: result}; the subscription's
@@ -88,6 +89,7 @@ class LumoChatCard extends HTMLElement {
       if (done) {
         this._conversationId = done.conversation_id;
         reply.content = done.response?.speech?.plain?.speech || reply.content;
+        this._updateLastBubble(reply.content);
       }
     } catch (err) {
       this._messages.pop();
@@ -119,7 +121,8 @@ class LumoChatCard extends HTMLElement {
           background: var(--app-header-background-color); color: var(--app-header-text-color, white); }
         .page { padding: 16px; height: calc(100% - var(--header-height, 56px) - 32px); max-width: 960px; margin: 0 auto; }
         ha-card { display: flex; flex-direction: column; height: 100%; }
-        .messages { flex: 1; overflow-y: auto; max-height: ${this._full ? "none" : "480px"}; padding: 8px 16px; display: flex; flex-direction: column; gap: 8px; }
+        .messages { flex: 1; overflow-y: auto; max-height: ${this._full ? "none" : "480px"}; padding: 8px 16px; }
+        .content { display: flex; flex-direction: column; gap: 8px; }
         .message { padding: 8px 12px; border-radius: 12px; max-width: 80%; white-space: pre-wrap; overflow-wrap: anywhere; }
         ha-markdown.message { white-space: normal; }
         ha-markdown.message > :first-child { margin-top: 0; }
@@ -134,7 +137,7 @@ class LumoChatCard extends HTMLElement {
       </style>
       ${this._full ? `<div class="toolbar"><ha-menu-button></ha-menu-button><span>${title}</span></div><div class="page">` : ""}
       <ha-card ${this._full ? "" : `header="${title}"`}>
-        <div class="messages"></div>
+        <div class="messages"><div class="content"></div></div>
         <form><button type="button" class="new" title="Start a new conversation">New</button><input placeholder="Enter a request" autocomplete="off" /><button type="submit">Send</button></form>
       </ha-card>
       ${this._full ? "</div>" : ""}`;
@@ -143,36 +146,71 @@ class LumoChatCard extends HTMLElement {
       this._send();
     });
     this.shadowRoot.querySelector("button.new").addEventListener("click", () => this._newConversation());
+
+    // Stay at the newest message. <ha-markdown> renders after a moment, and Home Assistant
+    // redraws the panel when the browser tab comes back, so the content grows after any
+    // scroll made when it was added -- which used to leave the view part-way up. Whenever
+    // the content or the list's own size changes, scroll to the end again, unless the user
+    // has scrolled up to read; scrolling back down resumes following.
+    const list = this.shadowRoot.querySelector(".messages");
+    this._stick = true;
+    list.addEventListener("scroll", () => {
+      this._stick = list.scrollHeight - list.scrollTop - list.clientHeight < 48;
+    });
+    this._resizeObserver?.disconnect();
+    if (window.ResizeObserver) {
+      this._resizeObserver = new ResizeObserver(() => this._scrollToEnd());
+      this._resizeObserver.observe(list);
+      this._resizeObserver.observe(list.querySelector(".content"));
+    }
     this._renderMessages();
   }
 
-  _renderMessages() {
+  connectedCallback() {
+    this._scrollToEnd();
+  }
+
+  _scrollToEnd(force = false) {
     const list = this.shadowRoot?.querySelector(".messages");
     if (!list) return;
-    list.replaceChildren(
-      ...(this._messages.length
-        ? this._messages.map(({ role, content }) => this._bubble(role, content))
-        : [this._bubble("empty", this._fetched ? "No saved conversation yet." : "Loading…")]),
-    );
-    list.scrollTop = list.scrollHeight;
+    if (force) this._stick = true;
+    if (this._stick) list.scrollTop = list.scrollHeight;
   }
 
-  // While a reply streams in, only its bubble changes; rebuilding the list on every
-  // fragment would re-render every earlier reply's markdown each time.
-  _updateLastBubble(content) {
-    const list = this.shadowRoot?.querySelector(".messages");
-    const last = list?.lastElementChild;
+  // Adds and removes bubbles rather than rebuilding the list: a rebuild re-renders every
+  // earlier reply's markdown, and each one changing height moves the view.
+  _renderMessages() {
+    const content = this.shadowRoot?.querySelector(".content");
+    if (!content) return;
+    if (!this._messages.length) {
+      content.replaceChildren(this._bubble({ role: "empty", content: this._fetched ? "No saved conversation yet." : "Loading…" }));
+      this._scrollToEnd();
+      return;
+    }
+    const shown = [...content.children];
+    let kept = 0;
+    while (kept < shown.length && shown[kept]._message === this._messages[kept]) kept++;
+    shown.slice(kept).forEach((bubble) => bubble.remove());
+    content.append(...this._messages.slice(kept).map((message) => this._bubble(message)));
+    this._scrollToEnd();
+  }
+
+  // While a reply streams in, only its bubble changes.
+  _updateLastBubble(text) {
+    const last = this.shadowRoot?.querySelector(".content")?.lastElementChild;
     if (!last) return;
-    if (last.tagName === "HA-MARKDOWN") last.content = content;
-    else last.textContent = content;
-    list.scrollTop = list.scrollHeight;
+    if (last.tagName === "HA-MARKDOWN") last.content = text;
+    else last.textContent = text;
+    this._scrollToEnd();
   }
 
-  _bubble(role, content) {
+  _bubble(message) {
+    const { role, content } = message;
     // Replies are model output: never innerHTML. <ha-markdown> sanitises what it renders;
     // where it is not loaded, plain text.
     const markdown = role === "assistant" && customElements.get("ha-markdown");
     const el = document.createElement(markdown ? "ha-markdown" : "div");
+    el._message = message;
     el.className = `message ${role}`;
     if (markdown) {
       el.breaks = true;

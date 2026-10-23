@@ -88,4 +88,8 @@ integration up.
 `test_repairs.py` — a rejected key and a spent quota each raise their repair issue, the next
 successful reply removes it, and other API errors raise none.
 
+`test_chat_card.py` — `lumo/history` returns the caller's turns only (a `user_id` in the message
+is ignored), and setup serves the card and adds it to every dashboard. The card's JavaScript itself
+has no tests; `node --check` is the only check it gets.
+
 The config flow itself, the rest of streaming and the remaining executors have no tests yet.

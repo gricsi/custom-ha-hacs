@@ -60,6 +60,32 @@ from `GET /models`, labelled with each model's context window.
 | Web search / code interpreter | ❌ | Responses-API-only features, not available |
 | Embeddings, audio | ❌ | No endpoint |
 
+## Conversation history and the chat card
+
+The Assist dialog forgets its messages when you close it, and Home Assistant drops a conversation
+after five minutes. Lumo keeps each signed-in user's last 20 messages in `.storage/lumo.history`
+and continues from them, so closing the dialog no longer loses the thread. Voice satellites have
+no user and are never remembered.
+
+- Turn it off per agent with **Remember conversations** in the agent's options.
+- `lumo.clear_history` forgets your own history; run without a user (from an automation) it
+  forgets everyone's.
+
+To also *see* the history, add the chat card to a dashboard. It loads automatically, so no
+resource entry is needed:
+
+```yaml
+type: custom:lumo-chat-card
+agent_id: conversation.lumo   # optional
+title: Lumo                   # optional
+```
+
+The card shows only your own messages and sends new ones through Home Assistant's normal
+conversation API. Nothing outside `.storage` is ever written.
+
+The integration also adds sensors for input/output tokens and, on the anonymous tier, requests
+remaining per model, and raises a repair issue when the key is rejected or the quota is spent.
+
 ## What changed from OmniConv
 
 The load-bearing difference: **Lumo has no Responses API.** `POST /api/ai/v1/responses` returns 404.

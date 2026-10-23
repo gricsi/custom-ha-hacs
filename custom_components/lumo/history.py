@@ -11,7 +11,14 @@ conversation itself. Nothing outside `.storage` is ever written.
 
 from __future__ import annotations
 
-from homeassistant.components import conversation
+from pathlib import Path
+from typing import Any
+
+import voluptuous as vol
+
+from homeassistant.components import conversation, websocket_api
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.storage import Store
 
@@ -19,6 +26,8 @@ from .const import DOMAIN
 
 STORAGE_KEY = f"{DOMAIN}.history"
 MAX_MESSAGES = 20
+CARD_URL = f"/{DOMAIN}/lumo-chat-card.js"
+CARD_PATH = Path(__file__).parent / "frontend" / "lumo-chat-card.js"
 
 
 class ConversationHistory:
@@ -62,6 +71,10 @@ class ConversationHistory:
         data[user_id] = turns
         await self._store.async_save(data)
 
+    async def async_get_messages(self, user_id: str) -> list[dict[str, str]]:
+        """Return the user's saved turns as {"role", "content"} dicts."""
+        return list((await self._async_load()).get(user_id, []))
+
     async def async_clear(self, user_id: str | None) -> None:
         """Forget one user's turns, or everyone's when no user is given."""
         data = await self._async_load()
@@ -78,3 +91,19 @@ def async_get_history(hass: HomeAssistant) -> ConversationHistory:
     if STORAGE_KEY not in hass.data:
         hass.data[STORAGE_KEY] = ConversationHistory(hass)
     return hass.data[STORAGE_KEY]
+
+
+@websocket_api.websocket_command({vol.Required("type"): "lumo/history"})
+@websocket_api.async_response
+async def websocket_history(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Return the caller's saved turns for the chat card. Read-only, and only ever the caller's."""
+    messages = await async_get_history(hass).async_get_messages(connection.user.id)
+    connection.send_result(msg["id"], {"messages": messages})
+
+
+async def async_register_card(hass: HomeAssistant) -> None:
+    """Serve the chat card and load it on every dashboard, so it needs no resource entry."""
+    await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(CARD_PATH), cache_headers=False)])
+    add_extra_js_url(hass, f"{CARD_URL}?v={CARD_PATH.stat().st_mtime_ns}")

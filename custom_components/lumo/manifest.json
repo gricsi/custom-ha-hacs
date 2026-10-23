@@ -14,11 +14,14 @@
   "dependencies": [
     "conversation",
     "energy",
+    "frontend",
     "history",
+    "http",
     "llm",
     "recorder",
     "rest",
-    "scrape"
+    "scrape",
+    "websocket_api"
   ],
   "documentation": "https://github.com/gricsi/custom-ha-hacs",
   "integration_type": "service",

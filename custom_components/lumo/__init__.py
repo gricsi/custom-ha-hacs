@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import MappingProxyType
 
 import openai
+from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_API_KEY, Platform
 from homeassistant.core import HomeAssistant
@@ -27,6 +28,7 @@ from .const import (
     VALIDATION_CHAT_MODEL,
 )
 from .api import async_setup_api
+from .history import async_register_card, websocket_history
 from .services import async_setup_services
 
 PLATFORMS = (Platform.AI_TASK, Platform.CONVERSATION, Platform.SENSOR)
@@ -84,6 +86,8 @@ async def async_validate_connection(client: openai.AsyncOpenAI, has_api_key: boo
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up Lumo."""
     await async_setup_services(hass, config)
+    websocket_api.async_register_command(hass, websocket_history)
+    await async_register_card(hass)
     return True
 
 

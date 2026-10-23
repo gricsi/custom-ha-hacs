@@ -25,6 +25,7 @@ from homeassistant.components import conversation, frontend, panel_custom, webso
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import chat_session
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -150,8 +151,26 @@ async def websocket_history(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Return the caller's saved turns for the chat card. Read-only, and only ever the caller's."""
-    agent_id, messages = await async_get_history(hass).async_get_messages(connection.user.id, msg.get("agent_id"))
+    history = async_get_history(hass)
+    agent_id, messages = await history.async_get_messages(connection.user.id, msg.get("agent_id"))
+    agent_id = agent_id or _first_lumo_agent(hass)
     connection.send_result(msg["id"], {"agent_id": agent_id, "messages": messages})
+
+
+@callback
+def _first_lumo_agent(hass: HomeAssistant) -> str | None:
+    """A Lumo conversation agent, for a user who has not talked to one yet.
+
+    Without it the card has no agent to name, and core answers an unnamed request with its
+    own built-in agent -- "I see you're targeting 'Home Assistant'..." -- not with Lumo.
+    """
+    registry = er.async_get(hass)
+    agents = sorted(
+        entry.entity_id
+        for entry in registry.entities.values()
+        if entry.platform == DOMAIN and entry.domain == "conversation" and not entry.disabled
+    )
+    return agents[0] if agents else None
 
 
 @websocket_api.websocket_command({vol.Required("type"): "lumo/history/clear", vol.Required("agent_id"): str})
@@ -194,13 +213,17 @@ async def websocket_chat(hass: HomeAssistant, connection: websocket_api.ActiveCo
         chat_session.async_get_chat_session(hass, msg.get("conversation_id")) as session,
         conversation.async_get_chat_log(hass, session, chat_log_delta_listener=forward),
     ):
+        agent_id = msg.get("agent_id")
+        if agent_id is None:
+            agent_id, _ = await async_get_history(hass).async_get_messages(connection.user.id, None)
+            agent_id = agent_id or _first_lumo_agent(hass)
         result = await conversation.async_converse(
             hass,
             msg["text"],
             session.conversation_id,
             connection.context(msg),
             msg.get("language"),
-            msg.get("agent_id"),
+            agent_id,
         )
     connection.send_message(websocket_api.event_message(msg["id"], {"done": result.as_dict()}))
     connection.send_result(msg["id"])

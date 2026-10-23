@@ -224,11 +224,15 @@ class LumoChatPanel extends LumoChatCard {
   }
 }
 
-customElements.define("lumo-chat-card", LumoChatCard);
-customElements.define("lumo-chat-panel", LumoChatPanel);
+// Loaded twice -- say, also added by hand as a dashboard resource -- the second run must
+// not define the elements again: that throws "has already been used with this registry".
+if (!customElements.get("lumo-chat-card")) customElements.define("lumo-chat-card", LumoChatCard);
+if (!customElements.get("lumo-chat-panel")) customElements.define("lumo-chat-panel", LumoChatPanel);
 window.customCards = window.customCards || [];
-window.customCards.push({
-  type: "lumo-chat-card",
-  name: "Lumo chat",
-  description: "An Assist conversation that keeps its history after you close it.",
-});
+if (!window.customCards.some((card) => card.type === "lumo-chat-card")) {
+  window.customCards.push({
+    type: "lumo-chat-card",
+    name: "Lumo chat",
+    description: "An Assist conversation that keeps its history after you close it.",
+  });
+}

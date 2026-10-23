@@ -3,7 +3,7 @@ import os
 import sqlite3
 import time
 from abc import ABC, abstractmethod
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from urllib import parse
 
@@ -698,8 +698,7 @@ class NativeFunctionExecutor(FunctionExecutor):
         entity_id = str(arguments.get("entity_id") or "").strip().lower()
 
         if not entity_id:
-            runs = [run for key in list(store) for run in self._trace_runs(store, key)]
-            runs.sort(key=lambda run: str(run["start"] or ""), reverse=True)
+            runs = self._newest_first([run for key in list(store) for run in self._trace_runs(store, key)])
             return {
                 "runs": runs[:limit],
                 "returned": min(limit, len(runs)),
@@ -803,8 +802,23 @@ class NativeFunctionExecutor(FunctionExecutor):
                 run["error"] = short["error"]
             runs.append(run)
 
-        runs.sort(key=lambda run: str(run["start"] or ""), reverse=True)
-        return runs
+        return self._newest_first(runs)
+
+    @staticmethod
+    def _newest_first(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Real runs before not-triggered evaluations, each newest first.
+
+        A state-triggered automation is evaluated constantly without matching; ranked by
+        time alone those evaluations fill the listing and "latest" picks one of them. Times
+        are compared as datetimes, because local-time text sorts wrongly when the clocks
+        go back -- 02:10+01:00 comes after 02:30+02:00.
+        """
+        oldest = datetime.min.replace(tzinfo=dt_util.UTC)
+        return sorted(
+            runs,
+            key=lambda run: (not run.get("not_triggered"), dt_util.parse_datetime(run["start"] or "") or oldest),
+            reverse=True,
+        )
 
     def _trace_detail(self, store: dict[str, Any], key: str, entity_id: str, run_id: str) -> dict[str, Any]:
         """Return one run step by step. run_id "latest" means the newest run."""

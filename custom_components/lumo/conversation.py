@@ -287,7 +287,7 @@ class LumoEntity(
     def __init__(self, entry: LumoConfigEntry, subentry: ConfigSubentry) -> None:
         """Initialize the agent."""
         super().__init__(entry, subentry)
-        if self.subentry.data.get(CONF_LLM_HASS_API):
+        if self.subentry.data.get(CONF_LLM_HASS_API) and self.subentry.data.get(CONF_DEVICE_CONTROL, True):
             self._attr_supported_features = conversation.ConversationEntityFeature.CONTROL
         self._cached_tools: list[CustomFunctionTool] | None = None
         self._cached_yaml_hash: int | None = None

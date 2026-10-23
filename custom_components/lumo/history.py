@@ -24,6 +24,7 @@ import voluptuous as vol
 from homeassistant.components import conversation, frontend, panel_custom, websocket_api
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import chat_session
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -108,14 +109,15 @@ class ConversationHistory:
             agent_id = max(recent)[1]
         return agent_id, await self._async_turns(user_id, agent_id)
 
-    async def async_clear(self, user_id: str | None) -> None:
-        """Forget one user's turns with every agent, or everyone's when no user is given."""
+    async def async_clear(self, user_id: str | None, agent_id: str | None = None) -> None:
+        """Forget one user's turns -- with one agent, or with all -- or everyone's when no user is given."""
         data = await self._async_load()
         if user_id is None:
             data.clear()
         else:
-            for users in data.values():
-                users.pop(user_id, None)
+            for agent, users in data.items():
+                if agent_id is None or agent == agent_id:
+                    users.pop(user_id, None)
         self._schedule_save()
 
     async def async_flush(self) -> None:
@@ -150,6 +152,58 @@ async def websocket_history(
     """Return the caller's saved turns for the chat card. Read-only, and only ever the caller's."""
     agent_id, messages = await async_get_history(hass).async_get_messages(connection.user.id, msg.get("agent_id"))
     connection.send_result(msg["id"], {"agent_id": agent_id, "messages": messages})
+
+
+@websocket_api.websocket_command({vol.Required("type"): "lumo/history/clear", vol.Required("agent_id"): str})
+@websocket_api.async_response
+async def websocket_clear_history(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Start a new conversation: forget the caller's history with one agent. Only ever the caller's."""
+    await async_get_history(hass).async_clear(connection.user.id, msg["agent_id"])
+    connection.send_result(msg["id"])
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "lumo/chat",
+        vol.Required("text"): str,
+        vol.Optional("agent_id"): str,
+        vol.Optional("conversation_id"): vol.Any(str, None),
+        vol.Optional("language"): str,
+    }
+)
+@websocket_api.async_response
+async def websocket_chat(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Run one turn for the chat card, sending the reply as it is written.
+
+    conversation/process answers only once the reply is complete. This does what the Assist
+    pipeline does: open the chat log with a delta listener first, so the agent writes into
+    that same log. Sent as {"delta": text} events, then {"done": result}, then the result
+    that ends the subscription. The turn runs as the connection's user.
+    """
+    # Lets the card's unsubscribe after "done" succeed; there is nothing left to cancel.
+    connection.subscriptions[msg["id"]] = lambda: None
+
+    @callback
+    def forward(chat_log: conversation.ChatLog, delta: dict[str, Any]) -> None:
+        if content := delta.get("content"):
+            connection.send_message(websocket_api.event_message(msg["id"], {"delta": content}))
+
+    with (
+        chat_session.async_get_chat_session(hass, msg.get("conversation_id")) as session,
+        conversation.async_get_chat_log(hass, session, chat_log_delta_listener=forward),
+    ):
+        result = await conversation.async_converse(
+            hass,
+            msg["text"],
+            session.conversation_id,
+            connection.context(msg),
+            msg.get("language"),
+            msg.get("agent_id"),
+        )
+    connection.send_message(websocket_api.event_message(msg["id"], {"done": result.as_dict()}))
+    connection.send_result(msg["id"])
 
 
 async def async_register_card(hass: HomeAssistant) -> None:

@@ -272,3 +272,22 @@ def test_without_device_control_only_read_only_tools_remain() -> None:
 
     kept = without_control_tools([turn_on, script, LiveContext(), read_logs, execute, undeclared])
     assert [tool.name for tool in kept] == ["homeassistant__GetLiveContext", "read_logs"]
+
+
+@pytest.mark.parametrize(("device_control", "advertised"), [(True, True), (False, False)])
+def test_the_control_feature_follows_device_control(device_control: bool, advertised: bool) -> None:
+    """Home Assistant offers an agent that advertises CONTROL for device commands."""
+    from types import SimpleNamespace
+
+    from homeassistant.components import conversation
+
+    from custom_components.lumo.const import CONF_DEVICE_CONTROL, CONF_LLM_HASS_API
+    from custom_components.lumo.conversation import LumoEntity
+
+    entity = LumoEntity(
+        SimpleNamespace(entry_id="e"),
+        SimpleNamespace(
+            subentry_id="s", title="Lumo", data={CONF_LLM_HASS_API: ["assist"], CONF_DEVICE_CONTROL: device_control}
+        ),
+    )
+    assert bool(entity.supported_features & conversation.ConversationEntityFeature.CONTROL) is advertised

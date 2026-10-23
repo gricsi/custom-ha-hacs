@@ -89,11 +89,14 @@ def run(
     store: dict[str, Any] | None,
     arguments: dict[str, Any],
     states: dict[str, tuple[str, dict[str, Any]]] | None = None,
+    time_zone: str | None = None,
 ) -> dict[str, Any]:
     """Call get_traces the way the tool layer does, against a fresh HomeAssistant."""
 
     async def main() -> dict[str, Any]:
         hass = HomeAssistant(tempfile.mkdtemp())
+        if time_zone:
+            await hass.config.async_set_time_zone(time_zone)
         try:
             if store is not None:
                 hass.data["trace"] = store
@@ -294,3 +297,47 @@ def test_dispatched_by_name():
             await hass.async_stop(force=True)
 
     assert asyncio.run(main())["available"] == 1
+
+
+# --------------------------------------------------------------------------- ordering
+
+
+def test_real_runs_come_before_newer_not_triggered_evaluations():
+    """A state-triggered automation is evaluated constantly without matching. Those used to
+    sort in among the runs by time, so they filled the listing and "latest" returned one of
+    them instead of the run the user asked about."""
+    real = automation_trace(started_minutes_ago=10)
+    skipped = [automation_trace(not_triggered=True, started_minutes_ago=m) for m in (1, 2, 3)]
+    store = store_of(real, *skipped)
+    entity = {"entity_id": "automation.padlo_szivattyu_start"}
+
+    listing = run(store, entity, PUMP_STATE)
+    latest = run(store, {**entity, "run_id": "latest"}, PUMP_STATE)
+    everything = run(store, {})
+
+    assert listing["runs"][0]["run_id"] == real.run_id
+    assert [r.get("not_triggered", False) for r in listing["runs"]] == [False, True, True, True]
+    assert latest["run_id"] == real.run_id
+    assert everything["runs"][0]["run_id"] == real.run_id
+
+
+def test_latest_falls_back_to_an_evaluation_when_nothing_ran():
+    skipped = automation_trace(not_triggered=True, started_minutes_ago=1)
+    latest = run(store_of(skipped), {"entity_id": "automation.padlo_szivattyu_start", "run_id": "latest"}, PUMP_STATE)
+    assert latest["run_id"] == skipped.run_id
+
+
+def test_runs_are_ordered_by_time_not_by_local_clock_text():
+    """When the clocks go back, 02:10+01:00 is later than 02:30+02:00 but sorts as earlier."""
+    from datetime import UTC, datetime
+
+    earlier = automation_trace()
+    later = automation_trace()
+    earlier._timestamp_start = datetime(2026, 10, 25, 0, 30, tzinfo=UTC)  # 02:30 CEST
+    later._timestamp_start = datetime(2026, 10, 25, 1, 10, tzinfo=UTC)  # 02:10 CET
+
+    result = run(
+        store_of(earlier, later), {"entity_id": "automation.padlo_szivattyu_start"}, PUMP_STATE, "Europe/Budapest"
+    )
+
+    assert [r["run_id"] for r in result["runs"]] == [later.run_id, earlier.run_id]

@@ -89,8 +89,10 @@ integration up.
 successful reply removes it, and other API errors raise none.
 
 `test_chat_card.py` — `lumo/history` returns the caller's turns only (a `user_id` in the message
-is ignored), and setup serves the card and adds it to every dashboard. The card's JavaScript itself
-has no tests; `node --check` is the only check it gets.
+is ignored), and setup serves the card and adds it to every dashboard. It also covers `lumo/chat`
+(the reply streamed as events, then the result, through a real chat log) and `lumo/history/clear`
+(only the caller's history with that one agent). The card's JavaScript has no tests in this suite; it
+was smoke-tested once in jsdom against a fake `hass`, outside the repo.
 
 `test_quick_setup.py` — the short form for a new conversation agent: the generated function YAML,
 the Node-RED URL and login, the read-only annotations, that the presets still match

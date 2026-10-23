@@ -311,6 +311,9 @@ async def _transform_stream(
     pending_tool_calls: dict[int, dict[str, str]] = {}
     started = False
 
+    # Tool calls whose arguments were not JSON, answered after the assistant message.
+    rejected: list[conversation.ToolResultContentDeltaDict] = []
+
     def flush_tool_calls() -> list[llm.ToolInput]:
         tool_inputs: list[llm.ToolInput] = []
         for index in sorted(pending_tool_calls):
@@ -319,9 +322,19 @@ async def _transform_stream(
             try:
                 tool_args = json.loads(raw_arguments)
             except json.JSONDecodeError as err:
-                raise HomeAssistantError(
-                    f"Lumo returned malformed arguments for tool {call['name']!r}: {raw_arguments}"
-                ) from err
+                # This used to fail the whole turn. External means core will not run it,
+                # not even with empty arguments; the error result below lets the model
+                # see what went wrong and resend the call.
+                LOGGER.warning("Lumo sent malformed arguments for tool %s: %s", call["name"], raw_arguments)
+                tool_inputs.append(llm.ToolInput(id=call["id"], tool_name=call["name"], tool_args={}, external=True))
+                rejected.append(
+                    _tool_result_delta(
+                        call["id"],
+                        call["name"],
+                        {"error": f"The arguments were not valid JSON ({err}). Resend the call with valid JSON."},
+                    )
+                )
+                continue
             tool_inputs.append(
                 llm.ToolInput(
                     id=call["id"],
@@ -401,6 +414,26 @@ async def _transform_stream(
         if not started:
             yield {"role": "assistant"}
         yield {"tool_calls": flush_tool_calls()}
+
+    for result in rejected:
+        yield result
+
+
+def _tool_result_delta(tool_call_id: str, tool_name: str, data: dict[str, Any]) -> dict[str, Any]:
+    """An error result for a tool call core did not run.
+
+    2026.10 reads `result`, an llm.ToolResult, and warns about `tool_result`; earlier cores
+    read only `tool_result`. Both are set, so each finds the one it expects.
+    """
+    delta: dict[str, Any] = {
+        "role": "tool_result",
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_name,
+        "tool_result": data,
+    }
+    if (result_cls := getattr(llm, "ToolResult", None)) is not None:
+        delta["result"] = result_cls(data=data, error=True)
+    return delta
 
 
 class LumoBaseLLMEntity(Entity):

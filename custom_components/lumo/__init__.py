@@ -31,7 +31,13 @@ from .const import (
     VALIDATION_CHAT_MODEL,
 )
 from .api import async_setup_api
-from .history import async_register_card, async_set_panel_visibility, websocket_history
+from .history import (
+    async_register_card,
+    async_set_panel_visibility,
+    websocket_chat,
+    websocket_clear_history,
+    websocket_history,
+)
 from .services import async_setup_services
 
 PLATFORMS = (Platform.AI_TASK, Platform.CONVERSATION, Platform.SENSOR)
@@ -90,6 +96,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up Lumo."""
     await async_setup_services(hass, config)
     websocket_api.async_register_command(hass, websocket_history)
+    websocket_api.async_register_command(hass, websocket_clear_history)
+    websocket_api.async_register_command(hass, websocket_chat)
     await async_register_card(hass)
     return True
 

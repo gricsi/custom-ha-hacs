@@ -19,6 +19,7 @@ from homeassistant.components import conversation
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
 
+from custom_components.lumo.conversation import as_tool_result
 from custom_components.lumo.entity import LumoBaseLLMEntity, tool_result_data
 
 BASE = {"id": "c", "object": "chat.completion.chunk", "created": 0, "model": "lumo-max"}
@@ -81,7 +82,8 @@ def converse(client: Client) -> tuple[list[Any], list[dict[str, Any]]]:
             garage = Garage()
 
             async def call_tool(tool_input):
-                return await garage.async_call(hass, tool_input, None)
+                # What APIInstance.async_call_tool returns: a ToolResult from 2026.10.
+                return as_tool_result(await garage.async_call(hass, tool_input, None))
 
             chat_log.llm_api = SimpleNamespace(tools=[garage], custom_serializer=None, async_call_tool=call_tool)
             await entity._async_handle_chat_log(chat_log)

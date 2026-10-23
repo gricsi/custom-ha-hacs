@@ -24,6 +24,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 
 from custom_components.lumo.const import DOMAIN
+from custom_components.lumo.conversation import as_tool_result
 from custom_components.lumo.entity import LumoBaseLLMEntity
 
 
@@ -172,7 +173,8 @@ def test_a_rate_limit_on_the_final_retry_raises_the_quota_issue(monkeypatch: pyt
             chat_log.llm_api = SimpleNamespace(tools=[Noop()], custom_serializer=None, async_call_tool=None)
 
             async def call_tool(tool_input):
-                return {}
+                # What APIInstance.async_call_tool returns: a ToolResult from 2026.10.
+                return as_tool_result({})
 
             chat_log.llm_api.async_call_tool = call_tool
             with pytest.raises(HomeAssistantError):

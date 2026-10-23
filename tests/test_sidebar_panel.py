@@ -131,3 +131,15 @@ def test_loading_the_card_twice_does_not_redefine_its_elements() -> None:
     source = CARD_PATH.read_text()
     for element in ("lumo-chat-card", "lumo-chat-panel"):
         assert f'if (!customElements.get("{element}"))' in source
+
+
+def test_the_chat_follows_the_newest_message_as_content_grows() -> None:
+    """<ha-markdown> renders after a moment and the panel is redrawn when the browser tab
+    comes back, so a scroll made when a message was added ended part-way up. jsdom does no
+    layout, so this checks the mechanism is there; it was exercised in jsdom with faked
+    heights outside this suite."""
+    from custom_components.lumo.history import CARD_PATH
+
+    source = CARD_PATH.read_text()
+    assert "new ResizeObserver(() => this._scrollToEnd())" in source
+    assert "this._scrollToEnd(true)" in source  # sending always shows the newest message

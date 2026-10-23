@@ -232,12 +232,21 @@ async def websocket_chat(hass: HomeAssistant, connection: websocket_api.ActiveCo
 async def async_register_card(hass: HomeAssistant) -> None:
     """Serve the chat card and load it on every dashboard, so it needs no resource entry."""
     await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(CARD_PATH), cache_headers=False)])
-    frontend.add_extra_js_url(hass, _card_module_url())
+    frontend.add_extra_js_url(hass, _card_module_url(hass))
 
 
-def _card_module_url() -> str:
-    """The card's URL, versioned by its mtime so an update is not served from cache."""
-    return f"{CARD_URL}?v={CARD_PATH.stat().st_mtime_ns}"
+def _card_module_url(hass: HomeAssistant) -> str:
+    """The card's URL, versioned by its mtime so an update is not served from cache.
+
+    Worked out once per run and reused: dashboards and the panel must load the very same
+    URL, or the browser runs the file twice and the second customElements.define throws.
+    A file replaced while Home Assistant runs would otherwise give the panel, registered
+    again on a reload, a different version than the dashboards got at startup.
+    """
+    key = f"{DOMAIN}_card_url"
+    if key not in hass.data:
+        hass.data[key] = f"{CARD_URL}?v={CARD_PATH.stat().st_mtime_ns}"
+    return hass.data[key]
 
 
 async def async_set_panel_visibility(hass: HomeAssistant, entry_id: str, visibility: str | None) -> None:
@@ -264,6 +273,6 @@ async def async_set_panel_visibility(hass: HomeAssistant, entry_id: str, visibil
         webcomponent_name="lumo-chat-panel",
         sidebar_title="Lumo",
         sidebar_icon="mdi:chat-processing",
-        module_url=_card_module_url(),
+        module_url=_card_module_url(hass),
         require_admin=widest == "admin",
     )

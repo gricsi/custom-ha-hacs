@@ -84,3 +84,50 @@ def test_the_panel_is_sized_to_the_window() -> None:
     from custom_components.lumo.history import CARD_PATH
 
     assert "height: 100dvh" in CARD_PATH.read_text()
+
+
+def test_the_panel_and_dashboards_load_the_card_from_one_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two URLs mean the browser runs the file twice, and the second customElements.define
+    throws "lumo-chat-card has already been used with this registry". The version used to be
+    the file's mtime read at each call, so a file replaced while Home Assistant ran -- an
+    update without a restart, then a reload -- gave the panel a different URL than dashboards."""
+    from types import SimpleNamespace
+
+    import custom_components.lumo.history as history
+
+    served: list[str] = []
+
+    async def register(configs: list[Any]) -> None:
+        served.extend(c.url_path for c in configs)
+
+    async def main() -> tuple[set[str], str]:
+        hass = HomeAssistant(tempfile.mkdtemp())
+        hass.data[DATA_PANELS] = {}
+        hass.data["frontend_extra_module_url"] = set()
+        hass.http = SimpleNamespace(async_register_static_paths=register)
+        try:
+            await history.async_register_card(hass)
+            real_stat = history.CARD_PATH.stat
+            monkeypatch.setattr(
+                type(history.CARD_PATH),
+                "stat",
+                lambda self: SimpleNamespace(st_mtime_ns=real_stat().st_mtime_ns + 1),
+            )
+            await async_set_panel_visibility(hass, "e", "admin")
+            panel = hass.data[DATA_PANELS][PANEL_URL_PATH].to_response()
+            return hass.data["frontend_extra_module_url"], panel["config"]["_panel_custom"]["module_url"]
+        finally:
+            await hass.async_stop(force=True)
+
+    dashboard_urls, panel_url = asyncio.run(main())
+    assert dashboard_urls == {panel_url}
+
+
+def test_loading_the_card_twice_does_not_redefine_its_elements() -> None:
+    """A manually added dashboard resource also loads it a second time. jsdom is not part of
+    this suite, so this checks the guards themselves."""
+    from custom_components.lumo.history import CARD_PATH
+
+    source = CARD_PATH.read_text()
+    for element in ("lumo-chat-card", "lumo-chat-panel"):
+        assert f'if (!customElements.get("{element}"))' in source

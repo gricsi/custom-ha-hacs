@@ -63,7 +63,8 @@ from `GET /models`, labelled with each model's context window.
 ### Adding a conversation agent
 
 Adding an agent asks only for a name and the tools to give it — **Control devices**, **Read Home
-Assistant logs**, **Read Node-RED flows** — plus the Node-RED URL and login if you tick that one.
+Assistant logs**, **Read device details**, **Read Node-RED flows** — plus the Node-RED URL and login
+if you tick that one.
 Everything else starts on the recommended settings, and the function YAML is generated for you.
 The log and Node-RED tools are read-only and say so to Home Assistant. Leaving **Control devices**
 unticked leaves Lumo with read-only tools only: Home Assistant's own device control and exposed

@@ -55,6 +55,7 @@ asks what devices exist, or asks you to design or improve a dashboard" gets call
 | [get_traces](function/get_traces/) | `native` | "Did my automation run, and where did it stop?" — reads the automation editor's Traces page |
 | [render_template](function/render_template/) | `native` | "Why does my template sensor say 22?" — evaluates templates like Developer tools → Template |
 | [get_entity_state](function/get_entity_state/) | `template` | Every attribute of any entity — where a debugging answer usually hides |
+| [get_device_info](function/get_device_info/) | `template` | Maker, model, firmware, integration, web page and entities of a device — so hardware is not guessed at |
 | [node_red_flows](function/node_red_flows/) | `rest` | "Which of my Node-RED nodes is never reached?" — reads flows over the add-on's admin API |
 
 ### Telling Home Assistant how a function behaves

@@ -73,13 +73,13 @@ def test_no_tools_gives_no_functions() -> None:
     assert functions(quick_setup_options({CONF_TOOLS: []})) == {}
 
 
-@pytest.mark.parametrize("name", ["read_logs", "node_red_flows"])
+@pytest.mark.parametrize("name", ["read_logs", "node_red_flows", "get_device_info"])
 def test_reading_tools_are_marked_read_only(name: str) -> None:
     annotations = TOOL_PRESETS[name]["spec"]["annotations"]
     assert annotations == {"read_only": True, "destructive": False, "idempotent": True, "open_world": False}
 
 
-@pytest.mark.parametrize("name", ["read_logs", "node_red_flows"])
+@pytest.mark.parametrize("name", ["read_logs", "node_red_flows", "get_device_info"])
 def test_presets_match_the_documented_examples(name: str) -> None:
     """The examples are the documentation; a preset that drifts from them is a silent fork."""
     readme = (EXAMPLES / name / "README.md").read_text()

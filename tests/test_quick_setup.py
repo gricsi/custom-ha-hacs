@@ -291,3 +291,30 @@ def test_the_control_feature_follows_device_control(device_control: bool, advert
         ),
     )
     assert bool(entity.supported_features & conversation.ConversationEntityFeature.CONTROL) is advertised
+
+
+def test_the_agent_created_with_the_integration_matches_the_short_form_defaults() -> None:
+    """Adding the integration creates a conversation agent without showing the short form.
+    It got the bare recommended options -- no function YAML, no device_control -- so its
+    Reconfigure looked nothing like an agent made through the short form."""
+    import asyncio
+    import tempfile
+
+    from homeassistant.core import HomeAssistant
+
+    from custom_components.lumo.config_flow import LumoConfigFlow
+    from custom_components.lumo.const import CONF_SKIP_AUTHENTICATION
+
+    async def main() -> dict:
+        hass = HomeAssistant(tempfile.mkdtemp())
+        try:
+            flow = LumoConfigFlow()
+            flow.hass = hass
+            flow.context = {"source": "user"}
+            return await flow.async_step_user({CONF_SKIP_AUTHENTICATION: True})
+        finally:
+            await hass.async_stop(force=True)
+
+    result = asyncio.run(main())
+    agent = next(s for s in result["subentries"] if s["subentry_type"] == "conversation")
+    assert agent["data"] == quick_setup_options({CONF_TOOLS: ["execute_services"]})

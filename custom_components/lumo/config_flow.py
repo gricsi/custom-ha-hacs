@@ -78,7 +78,6 @@ from .const import (
     REASONING_EFFORTS,
     RECOMMENDED_AI_TASK_OPTIONS,
     RECOMMENDED_CHAT_MODEL,
-    RECOMMENDED_CONVERSATION_OPTIONS,
     RECOMMENDED_MAX_TOKENS,
     RECOMMENDED_REASONING_EFFORT,
     RECOMMENDED_TEMPERATURE,
@@ -188,7 +187,9 @@ class LumoConfigFlow(ConfigFlow, domain=DOMAIN):
                 subentries=[
                     {
                         "subentry_type": "conversation",
-                        "data": RECOMMENDED_CONVERSATION_OPTIONS,
+                        # The short form's defaults, so this agent's settings look like one
+                        # added through it -- the form itself is not shown during setup.
+                        "data": quick_setup_options({CONF_TOOLS: ["execute_services"]}),
                         "title": DEFAULT_CONVERSATION_NAME,
                         "unique_id": None,
                     },

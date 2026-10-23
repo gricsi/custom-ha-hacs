@@ -114,7 +114,7 @@ class LumoChatCard extends HTMLElement {
     const title = this._escape(this._config.title ?? "Lumo");
     this.shadowRoot.innerHTML = `
       <style>
-        :host { display: block; ${this._full ? "height: 100%; background: var(--primary-background-color);" : ""} }
+        :host { display: block; ${this._full ? "height: 100vh; height: 100dvh; background: var(--primary-background-color);" : ""} }
         .toolbar { display: flex; align-items: center; height: var(--header-height, 56px); padding: 0 12px; gap: 8px; font-size: 20px;
           background: var(--app-header-background-color); color: var(--app-header-text-color, white); }
         .page { padding: 16px; height: calc(100% - var(--header-height, 56px) - 32px); max-width: 960px; margin: 0 auto; }

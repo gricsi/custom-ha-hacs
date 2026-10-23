@@ -76,3 +76,11 @@ def test_the_entry_form_offers_the_sidebar_setting_defaulting_to_admins() -> Non
     assert validated[CONF_SIDEBAR] == "admin"
     for visibility in ("hidden", "admin", "everyone"):
         assert STEP_USER_DATA_SCHEMA({CONF_SIDEBAR: visibility})[CONF_SIDEBAR] == visibility
+
+
+def test_the_panel_is_sized_to_the_window() -> None:
+    """height: 100% resolved to nothing inside Home Assistant's panel container, so the chat
+    sat at the top of an empty page. jsdom does no layout, so this checks the rule itself."""
+    from custom_components.lumo.history import CARD_PATH
+
+    assert "height: 100dvh" in CARD_PATH.read_text()

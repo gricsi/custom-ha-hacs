@@ -192,3 +192,48 @@ def test_reconfiguring_a_recommended_agent_keeps_its_functions_and_history_setti
     assert written[CONF_PROMPT] == "Be brief."
     assert written[CONF_FUNCTIONS] == saved[CONF_FUNCTIONS]
     assert written[CONF_REMEMBER_HISTORY] is False
+
+
+@pytest.mark.parametrize(
+    "options",
+    [quick_setup_options({CONF_TOOLS: ["execute_services"]}), {}],
+    ids=["quick setup", "nothing saved"],
+)
+def test_an_agent_without_a_chosen_model_uses_lumo_max(options: dict) -> None:
+    import asyncio
+    import tempfile
+    from types import SimpleNamespace
+
+    import openai
+
+    from homeassistant.components import conversation
+    from homeassistant.core import HomeAssistant
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.lumo.entity import LumoBaseLLMEntity
+
+    sent: list[dict] = []
+
+    async def create(**kwargs) -> None:
+        sent.append(kwargs)
+        raise openai.OpenAIError("stop here")
+
+    async def main() -> None:
+        hass = HomeAssistant(tempfile.mkdtemp())
+        try:
+            client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+            entity = LumoBaseLLMEntity(
+                SimpleNamespace(entry_id="e", title="Lumo", runtime_data=client),
+                SimpleNamespace(subentry_id="s", title="Lumo", data=options),
+            )
+            entity.hass = hass
+            entity.entity_id = "conversation.lumo"
+            chat_log = conversation.ChatLog(hass, "cid")
+            chat_log.async_add_user_content(conversation.UserContent(content="hi"))
+            with pytest.raises(HomeAssistantError):
+                await entity._async_handle_chat_log(chat_log)
+        finally:
+            await hass.async_stop(force=True)
+
+    asyncio.run(main())
+    assert sent[0]["model"] == "lumo-max"

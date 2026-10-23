@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import MappingProxyType
 
 import openai
-from homeassistant.components import websocket_api
+from homeassistant.components import frontend, websocket_api
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_API_KEY, Platform
 from homeassistant.core import HomeAssistant
@@ -15,6 +15,8 @@ from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
+    CONF_SIDEBAR,
+    DEFAULT_SIDEBAR,
     CONF_BASE_URL,
     CONF_SKIP_AUTHENTICATION,
     DEFAULT_AI_TASK_NAME,
@@ -28,7 +30,7 @@ from .const import (
     VALIDATION_CHAT_MODEL,
 )
 from .api import async_setup_api
-from .history import async_register_card, websocket_history
+from .history import PANEL_URL_PATH, async_register_card, async_update_panel, websocket_history
 from .services import async_setup_services
 
 PLATFORMS = (Platform.AI_TASK, Platform.CONVERSATION, Platform.SENSOR)
@@ -120,6 +122,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: LumoConfigEntry) -> bool
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     await async_setup_api(hass, entry)
+
+    await async_update_panel(hass, entry.data.get(CONF_SIDEBAR, DEFAULT_SIDEBAR))
+    entry.async_on_unload(lambda: frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False))
 
     entry.async_on_unload(entry.add_update_listener(async_update_options))
 

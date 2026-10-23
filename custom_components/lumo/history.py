@@ -16,8 +16,7 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.components import conversation, websocket_api
-from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components import conversation, frontend, panel_custom, websocket_api
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.storage import Store
@@ -28,6 +27,8 @@ STORAGE_KEY = f"{DOMAIN}.history"
 MAX_MESSAGES = 20
 CARD_URL = f"/{DOMAIN}/lumo-chat-card.js"
 CARD_PATH = Path(__file__).parent / "frontend" / "lumo-chat-card.js"
+PANEL_URL_PATH = DOMAIN
+SIDEBAR_VISIBILITIES = ("hidden", "admin", "everyone")
 
 
 class ConversationHistory:
@@ -106,4 +107,29 @@ async def websocket_history(
 async def async_register_card(hass: HomeAssistant) -> None:
     """Serve the chat card and load it on every dashboard, so it needs no resource entry."""
     await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(CARD_PATH), cache_headers=False)])
-    add_extra_js_url(hass, f"{CARD_URL}?v={CARD_PATH.stat().st_mtime_ns}")
+    frontend.add_extra_js_url(hass, _card_module_url())
+
+
+def _card_module_url() -> str:
+    """The card's URL, versioned by its mtime so an update is not served from cache."""
+    return f"{CARD_URL}?v={CARD_PATH.stat().st_mtime_ns}"
+
+
+async def async_update_panel(hass: HomeAssistant, visibility: str) -> None:
+    """Show the chat full page in the sidebar: hidden, for admins only, or for everyone.
+
+    panel_custom refuses to overwrite a panel, and reconfiguring reloads the entry, so
+    any existing one is removed first.
+    """
+    frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
+    if visibility == "hidden":
+        return
+    await panel_custom.async_register_panel(
+        hass,
+        frontend_url_path=PANEL_URL_PATH,
+        webcomponent_name="lumo-chat-panel",
+        sidebar_title="Lumo",
+        sidebar_icon="mdi:chat-processing",
+        module_url=_card_module_url(),
+        require_admin=visibility == "admin",
+    )

@@ -12,12 +12,14 @@
         "data": {
           "api_key": "[%key:common::config_flow::data::api_key%]",
           "base_url": "Base URL",
-          "skip_authentication": "Skip API authentication"
+          "skip_authentication": "Skip API authentication",
+          "sidebar": "Show Lumo in the sidebar"
         },
         "data_description": {
           "api_key": "Your Lumo API key from the Manage keys page at lumo.proton.me. Optional: Lumo also answers unauthenticated requests, on a lower quota.",
           "base_url": "The Lumo API endpoint. Change this only if Proton moves the path, or to point the integration at another OpenAI-compatible server.",
-          "skip_authentication": "Skip the reachability and API-key check during setup. Useful if the endpoint is temporarily unreachable."
+          "skip_authentication": "Skip the reachability and API-key check during setup. Useful if the endpoint is temporarily unreachable.",
+          "sidebar": "A full-page Lumo chat with your saved conversation. Hidden, for admins only, or for every user."
         }
       },
       "reconfigure": {
@@ -26,12 +28,14 @@
         "data": {
           "api_key": "[%key:common::config_flow::data::api_key%]",
           "base_url": "Base URL",
-          "skip_authentication": "Skip API authentication"
+          "skip_authentication": "Skip API authentication",
+          "sidebar": "Show Lumo in the sidebar"
         },
         "data_description": {
           "api_key": "Your Lumo API key from the Manage keys page at lumo.proton.me. Prefilled with the key in use. Clear it to switch to the anonymous tier, which has a lower quota.",
           "base_url": "The Lumo API endpoint. Change this only if Proton moves the path, or to point the integration at another OpenAI-compatible server.",
-          "skip_authentication": "Skip the reachability and API-key check when saving. Useful if the endpoint is temporarily unreachable."
+          "skip_authentication": "Skip the reachability and API-key check when saving. Useful if the endpoint is temporarily unreachable.",
+          "sidebar": "A full-page Lumo chat with your saved conversation. Hidden, for admins only, or for every user."
         }
       }
     },
@@ -167,6 +171,13 @@
         "execute_services": "Control devices",
         "read_logs": "Read Home Assistant logs",
         "node_red_flows": "Read Node-RED flows"
+      }
+    },
+    "sidebar": {
+      "options": {
+        "hidden": "Hidden",
+        "admin": "Admins only",
+        "everyone": "Everyone"
       }
     }
   },

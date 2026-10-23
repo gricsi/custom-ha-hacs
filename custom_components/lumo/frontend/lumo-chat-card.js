@@ -72,10 +72,15 @@ class LumoChatCard extends HTMLElement {
 
   _render() {
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    const title = this._escape(this._config.title ?? "Lumo");
     this.shadowRoot.innerHTML = `
       <style>
+        :host { display: block; ${this._full ? "height: 100%; background: var(--primary-background-color);" : ""} }
+        .toolbar { display: flex; align-items: center; height: var(--header-height, 56px); padding: 0 12px; gap: 8px; font-size: 20px;
+          background: var(--app-header-background-color); color: var(--app-header-text-color, white); }
+        .page { padding: 16px; height: calc(100% - var(--header-height, 56px) - 32px); max-width: 960px; margin: 0 auto; }
         ha-card { display: flex; flex-direction: column; height: 100%; }
-        .messages { flex: 1; overflow-y: auto; max-height: 480px; padding: 8px 16px; display: flex; flex-direction: column; gap: 8px; }
+        .messages { flex: 1; overflow-y: auto; max-height: ${this._full ? "none" : "480px"}; padding: 8px 16px; display: flex; flex-direction: column; gap: 8px; }
         .message { padding: 8px 12px; border-radius: 12px; max-width: 80%; white-space: pre-wrap; overflow-wrap: anywhere; }
         .user { align-self: flex-end; background: var(--primary-color); color: var(--text-primary-color); }
         .assistant { align-self: flex-start; background: var(--secondary-background-color); color: var(--primary-text-color); }
@@ -85,10 +90,12 @@ class LumoChatCard extends HTMLElement {
         input { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font: inherit; }
         button { border: none; border-radius: 8px; padding: 0 16px; background: var(--primary-color); color: var(--text-primary-color); font: inherit; cursor: pointer; }
       </style>
-      <ha-card header="${this._escape(this._config.title ?? "Lumo")}">
+      ${this._full ? `<div class="toolbar"><ha-menu-button></ha-menu-button><span>${title}</span></div><div class="page">` : ""}
+      <ha-card ${this._full ? "" : `header="${title}"`}>
         <div class="messages"></div>
         <form><input placeholder="Enter a request" autocomplete="off" /><button type="submit">Send</button></form>
-      </ha-card>`;
+      </ha-card>
+      ${this._full ? "</div>" : ""}`;
     this.shadowRoot.querySelector("form").addEventListener("submit", (ev) => {
       ev.preventDefault();
       this._send();
@@ -122,7 +129,42 @@ class LumoChatCard extends HTMLElement {
   }
 }
 
+// The same chat, full page, behind the sidebar entry the integration registers (see
+// async_update_panel). Home Assistant hands a panel hass and narrow, never a config, and
+// a panel has to draw its own menu button or the sidebar cannot be opened on a phone.
+class LumoChatPanel extends LumoChatCard {
+  constructor() {
+    super();
+    this._full = true;
+    this.setConfig({ title: "Lumo" });
+  }
+
+  set hass(hass) {
+    super.hass = hass;
+    this._updateMenu();
+  }
+
+  set narrow(narrow) {
+    this._narrow = narrow;
+    this._updateMenu();
+  }
+
+  _render() {
+    super._render();
+    this._updateMenu();
+  }
+
+  _updateMenu() {
+    const menu = this.shadowRoot?.querySelector("ha-menu-button");
+    if (menu) {
+      menu.hass = this._hass;
+      menu.narrow = this._narrow;
+    }
+  }
+}
+
 customElements.define("lumo-chat-card", LumoChatCard);
+customElements.define("lumo-chat-panel", LumoChatPanel);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "lumo-chat-card",

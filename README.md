@@ -82,7 +82,9 @@ no user and are never remembered.
 - `lumo.clear_history` forgets your own history; run without a user (from an automation) it
   forgets everyone's.
 
-To also *see* the history, add the chat card to a dashboard. It loads automatically, so no
+To *see* the history, open **Lumo** in the sidebar: the same chat, full page. Who sees that entry
+is the **Show Lumo in the sidebar** setting on the Lumo entry (Reconfigure) — hidden, admins only
+(the default) or everyone. Or put the chat on a dashboard as a card. The card loads automatically, so no
 resource entry is needed:
 
 ```yaml

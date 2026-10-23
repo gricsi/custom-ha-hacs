@@ -43,7 +43,10 @@ from .presets import (
     TOOL_PRESETS,
     quick_setup_options,
 )
+from .history import SIDEBAR_VISIBILITIES
 from .const import (
+    CONF_SIDEBAR,
+    DEFAULT_SIDEBAR,
     CONF_REMEMBER_HISTORY,
     CONF_BASE_URL,
     CONF_CHAT_MODEL,
@@ -95,6 +98,11 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Optional(CONF_API_KEY): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
         vol.Optional(CONF_BASE_URL, default=DEFAULT_CONF_BASE_URL): str,
         vol.Optional(CONF_SKIP_AUTHENTICATION, default=DEFAULT_SKIP_AUTHENTICATION): bool,
+        vol.Optional(CONF_SIDEBAR, default=DEFAULT_SIDEBAR): SelectSelector(
+            SelectSelectorConfig(
+                options=list(SIDEBAR_VISIBILITIES), translation_key=CONF_SIDEBAR, mode=SelectSelectorMode.DROPDOWN
+            )
+        ),
     }
 )
 

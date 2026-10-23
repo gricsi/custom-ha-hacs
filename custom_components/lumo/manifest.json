@@ -18,6 +18,7 @@
     "history",
     "http",
     "llm",
+    "panel_custom",
     "recorder",
     "rest",
     "scrape",

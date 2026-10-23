@@ -86,15 +86,11 @@
           "title": "Functions and context",
           "data": {
             "functions": "Functions",
-            "max_function_calls_per_conversation": "Maximum function calls per conversation",
-            "attach_username": "Attach username to message",
             "context_threshold": "Context threshold",
             "context_truncate_strategy": "Context truncation strategy when exceeding threshold"
           },
           "data_description": {
             "functions": "Tools the model may call, in OmniConv's YAML function format.",
-            "max_function_calls_per_conversation": "Limits how many times the model can use tools in one turn.",
-            "attach_username": "Include the requesting Home Assistant username in the prompt.",
             "context_threshold": "Maximum number of tokens to keep in the conversation history before shortening it.",
             "context_truncate_strategy": "Method used to shorten conversation history when it exceeds the threshold."
           }

@@ -20,7 +20,6 @@ from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import llm
 from homeassistant.helpers.selector import (
-    BooleanSelector,
     NumberSelector,
     NumberSelectorConfig,
     SelectOptionDict,
@@ -35,14 +34,12 @@ from homeassistant.helpers.selector import (
 from homeassistant.helpers.typing import VolDictType
 
 from .const import (
-    CONF_ATTACH_USERNAME,
     CONF_BASE_URL,
     CONF_CHAT_MODEL,
     CONF_CONTEXT_THRESHOLD,
     CONF_CONTEXT_TRUNCATE_STRATEGY,
     CONF_ENTITIES_PROMPT,
     CONF_FUNCTIONS,
-    CONF_MAX_FUNCTION_CALLS_PER_CONVERSATION,
     CONF_MAX_TOKENS,
     CONF_PERFORMANCE_TRACING,
     CONF_PROMPT,
@@ -53,14 +50,12 @@ from .const import (
     CONF_TOP_P,
     CONTEXT_TRUNCATE_STRATEGIES,
     DEFAULT_AI_TASK_NAME,
-    DEFAULT_ATTACH_USERNAME,
     DEFAULT_CONF_BASE_URL,
     DEFAULT_CONF_FUNCTIONS,
     DEFAULT_CONTEXT_THRESHOLD,
     DEFAULT_CONTEXT_TRUNCATE_STRATEGY,
     DEFAULT_CONVERSATION_NAME,
     DEFAULT_ENTITIES_PROMPT,
-    DEFAULT_MAX_FUNCTION_CALLS_PER_CONVERSATION,
     DEFAULT_NAME,
     DEFAULT_SKIP_AUTHENTICATION,
     DOMAIN,
@@ -358,11 +353,6 @@ class LumoSubentryFlowHandler(ConfigSubentryFlow):
             step_schema.update(
                 {
                     vol.Optional(CONF_FUNCTIONS, default=DEFAULT_CONF_FUNCTIONS_STR): TemplateSelector(),
-                    vol.Optional(
-                        CONF_MAX_FUNCTION_CALLS_PER_CONVERSATION,
-                        default=DEFAULT_MAX_FUNCTION_CALLS_PER_CONVERSATION,
-                    ): int,
-                    vol.Optional(CONF_ATTACH_USERNAME, default=DEFAULT_ATTACH_USERNAME): BooleanSelector(),
                     vol.Optional(CONF_CONTEXT_THRESHOLD, default=DEFAULT_CONTEXT_THRESHOLD): int,
                     vol.Optional(
                         CONF_CONTEXT_TRUNCATE_STRATEGY,

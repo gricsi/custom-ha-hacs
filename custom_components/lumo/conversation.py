@@ -25,6 +25,7 @@ from .const import (
     MAX_FUNCTION_RESULT_CHARS,
 )
 from .entity import LumoBaseLLMEntity
+from .history import async_get_history
 
 
 def build_tool_annotations(function_name: str, declared: Any) -> Any | None:
@@ -86,6 +87,15 @@ def build_tool_annotations(function_name: str, declared: Any) -> Any | None:
         values[key] = value
 
     return annotations_cls(**values)
+
+
+def as_tool_result(data: Any, error: bool = False) -> Any:
+    """Wrap a function's output in llm.ToolResult, which core expects from 2026.10.
+
+    Older cores have no ToolResult and take the bare JSON, so it is returned as-is there.
+    """
+    result_cls = getattr(llm, "ToolResult", None)
+    return data if result_cls is None else result_cls(data=data, error=error)
 
 
 class CustomFunctionTool(llm.Tool):
@@ -221,11 +231,11 @@ class CustomFunctionTool(llm.Tool):
                 self.name,
                 result,
             )
-            return result
+            return as_tool_result(result)
 
         except Exception as err:
             LOGGER.error("Error executing function %s: %s", self.name, err)
-            return {"error": str(err)}
+            return as_tool_result({"error": str(err)}, error=True)
 
 
 async def async_setup_entry(
@@ -366,6 +376,10 @@ class LumoEntity(
                 LOGGER.info("⏱️  Load and extend custom function tools: %.3fs", elapsed)
                 start_time = time.time()
 
+        history = async_get_history(self.hass)
+        await history.async_restore(user_input.context.user_id, chat_log, self.entity_id)
+
         await self._async_handle_chat_log(chat_log)
 
+        await history.async_save(user_input.context.user_id, chat_log)
         return conversation.async_get_result_from_chat_log(user_input, chat_log)

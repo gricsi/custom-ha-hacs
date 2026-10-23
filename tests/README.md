@@ -65,4 +65,24 @@ in `test_read_logs.py`: `hass.data["trace"]` and the trace dict shapes are not p
 the genuine classes notice core reshaping them. One test builds the pre-2026.9 store shape (a plain
 `LimitedSizeDict` per entry), which `manifest.json` still allows.
 
-Nothing else in the integration has tests yet.
+`test_history.py` — the per-user history in `.storage/lumo.history`: seeding a fresh chat log,
+leaving a live one alone, per-user isolation, text-only and capped storage, surviving a restart, the
+agent's restore-then-save wiring, and that nothing but its own storage file is ever written (a
+`configuration.yaml` and a Node-RED `flows.json` are checked byte for byte).
+
+`test_tool_result.py` — the 2026.10 `ToolResult` migration in both directions, stubbed because the
+suite pins 2026.9.
+
+`test_context_threshold.py` — the context threshold option: what is dropped, what is always kept
+(system prompt, the current turn with its tool calls), and that the option reaches the request.
+
+`test_options_are_used.py` — every option the config flow offers is read somewhere else in the
+integration, and the UI labels no option the flow has dropped. It reads the source rather than running
+the flow; the allowlist at the top names the exceptions and why.
+
+`test_usage_sensors.py` — token totals, the per-tier requests-remaining sensors, isolation between
+config entries, and one streamed response reaching its entry's sensors. The harness calls
+`loader.async_setup(hass)` because writing state for an entity added without a platform looks its
+integration up.
+
+The config flow itself, the rest of streaming and the remaining executors have no tests yet.

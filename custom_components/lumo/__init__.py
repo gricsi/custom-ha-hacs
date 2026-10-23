@@ -29,7 +29,7 @@ from .const import (
 from .api import async_setup_api
 from .services import async_setup_services
 
-PLATFORMS = (Platform.AI_TASK, Platform.CONVERSATION)
+PLATFORMS = (Platform.AI_TASK, Platform.CONVERSATION, Platform.SENSOR)
 
 # async_setup only registers the lumo.generate_content action; everything else
 # is configured through config entries, so there is no YAML schema to accept.

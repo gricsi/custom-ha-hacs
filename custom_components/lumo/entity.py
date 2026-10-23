@@ -40,6 +40,7 @@ from openai.types.chat import (
     ChatCompletionToolMessageParam,
     ChatCompletionUserMessageParam,
 )
+
 try:
     # Home Assistant core ships probatio (an install_requires of the
     # homeassistant package itself) and core's own openai_conversation uses it
@@ -52,6 +53,7 @@ except ImportError:  # pragma: no cover - older Home Assistant
 
 from .const import (
     CONF_CHAT_MODEL,
+    CONF_CONTEXT_THRESHOLD,
     CONF_MAX_TOKENS,
     CONF_PERFORMANCE_TRACING,
     CONF_REASONING_EFFORT,
@@ -66,7 +68,10 @@ from .const import (
     RECOMMENDED_REASONING_EFFORT,
     RECOMMENDED_TEMPERATURE,
     RECOMMENDED_TOP_P,
+    DEFAULT_CONTEXT_THRESHOLD,
 )
+
+from .sensor import async_record_usage
 
 if TYPE_CHECKING:
     from . import LumoConfigEntry
@@ -173,9 +178,7 @@ def _serialize_json(obj: Any) -> str:
     return orjson.dumps(obj).decode("utf-8")
 
 
-def _format_tool(
-    tool: llm.Tool, custom_serializer: Callable[[Any], Any] | None
-) -> ChatCompletionFunctionToolParam:
+def _format_tool(tool: llm.Tool, custom_serializer: Callable[[Any], Any] | None) -> ChatCompletionFunctionToolParam:
     """Format a HA tool as a chat-completions function tool."""
     # CustomFunctionTool carries the YAML spec's `parameters` block verbatim in
     # raw_parameters: it is already JSON Schema, so converting it would be wrong.
@@ -195,6 +198,29 @@ def _format_tool(
     )
 
 
+def tool_result_data(content: Any) -> Any:
+    """Return a tool result's payload: `.result.data` from 2026.10, `.tool_result` before."""
+    result = getattr(content, "result", None)
+    return content.tool_result if result is None else result.data
+
+
+def trim_messages(messages: list[ChatCompletionMessageParam], threshold: int) -> list[ChatCompletionMessageParam]:
+    """Drop the earlier turns once the conversation is estimated over `threshold` tokens.
+
+    The estimate is four characters to a token, which is close enough to keep a long
+    conversation (or a restored history) from crowding out the current turn. System
+    messages are not counted: they are never dropped, and exposed entities can make the
+    prompt alone exceed the threshold, which would then discard all history every turn.
+    What is kept is every system message and the current turn from its user message on,
+    so a tool call is never separated from its result. Zero disables trimming.
+    """
+    conversation_only = [m for m in messages if m["role"] != "system"]
+    if not threshold or len(_serialize_json(conversation_only)) // 4 <= threshold:
+        return messages
+    last_user = max((i for i, m in enumerate(messages) if m["role"] == "user"), default=0)
+    return [m for m in messages[:last_user] if m["role"] == "system"] + messages[last_user:]
+
+
 def _convert_content_to_messages(
     chat_content: list[conversation.Content],
 ) -> list[ChatCompletionMessageParam]:
@@ -207,7 +233,7 @@ def _convert_content_to_messages(
                 ChatCompletionToolMessageParam(
                     role="tool",
                     tool_call_id=content.tool_call_id,
-                    content=_serialize_json(content.tool_result),
+                    content=_serialize_json(tool_result_data(content)),
                 )
             )
             continue
@@ -248,6 +274,7 @@ def _convert_content_to_messages(
 async def _transform_stream(
     chat_log: conversation.ChatLog,
     stream: AsyncStream[ChatCompletionChunk],
+    entry_id: str,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict | conversation.ToolResultContentDeltaDict]:
     """Transform a Lumo chat-completions delta stream into HA format."""
     # index -> partial tool call. Lumo currently emits a complete tool call in a
@@ -290,6 +317,7 @@ async def _transform_stream(
                 }
             )
             _log_remaining_limits(chunk.usage)
+            async_record_usage(chat_log.hass, entry_id, chunk.usage)
 
         if not chunk.choices:
             continue
@@ -381,6 +409,7 @@ class LumoBaseLLMEntity(Entity):
         perf.checkpoint("Start _async_handle_chat_log")
 
         messages = _convert_content_to_messages(chat_log.content)
+        messages = trim_messages(messages, options.get(CONF_CONTEXT_THRESHOLD, DEFAULT_CONTEXT_THRESHOLD))
         perf.checkpoint("Convert chat content to chat-completions format")
 
         model_args: dict[str, Any] = {
@@ -465,7 +494,7 @@ class LumoBaseLLMEntity(Entity):
                         [
                             content
                             async for content in chat_log.async_add_delta_content_stream(
-                                self.entity_id, _transform_stream(chat_log, stream)
+                                self.entity_id, _transform_stream(chat_log, stream, self.entry.entry_id)
                             )
                         ]
                     )
@@ -508,7 +537,7 @@ class LumoBaseLLMEntity(Entity):
             try:
                 stream = await client.chat.completions.create(**final_args)
                 async for _content in chat_log.async_add_delta_content_stream(
-                    self.entity_id, _transform_stream(chat_log, stream)
+                    self.entity_id, _transform_stream(chat_log, stream, self.entry.entry_id)
                 ):
                     pass
             except openai.APIStatusError as err:

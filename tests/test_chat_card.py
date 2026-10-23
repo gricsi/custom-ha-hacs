@@ -31,7 +31,7 @@ def history_for(user: str, message: dict[str, Any] | None = None) -> list[Any]:
                 chat_log.async_add_assistant_content_without_tools(
                     conversation.AssistantContent(agent_id="conversation.lumo", content=f"{owner} answered")
                 )
-                await async_get_history(hass).async_save(owner, chat_log)
+                await async_get_history(hass).async_save(owner, chat_log, f"conversation.lumo_{owner}")
 
             sent: list[Any] = []
             connection = SimpleNamespace(
@@ -50,6 +50,7 @@ def history_for(user: str, message: dict[str, Any] | None = None) -> list[Any]:
 def test_returns_the_callers_turns() -> None:
     assert history_for("alice") == [
         {
+            "agent_id": "conversation.lumo_alice",
             "messages": [
                 {"role": "user", "content": "alice asks"},
                 {"role": "assistant", "content": "alice answered"},
@@ -59,7 +60,13 @@ def test_returns_the_callers_turns() -> None:
 
 
 def test_a_user_without_history_gets_an_empty_list() -> None:
-    assert history_for("carol") == [{"messages": []}]
+    assert history_for("carol") == [{"agent_id": None, "messages": []}]
+
+
+def test_an_agent_can_be_asked_for_and_another_users_agent_gives_nothing() -> None:
+    assert history_for("alice", {"agent_id": "conversation.lumo_bob"}) == [
+        {"agent_id": "conversation.lumo_bob", "messages": []}
+    ]
 
 
 def test_the_card_ships_and_defines_its_element() -> None:

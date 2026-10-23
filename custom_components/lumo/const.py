@@ -34,6 +34,7 @@ CONF_CONTEXT_TRUNCATE_STRATEGY = "context_truncate_strategy"
 CONF_PERFORMANCE_TRACING = "performance_tracing"
 CONF_REMEMBER_HISTORY = "remember_history"
 CONF_SIDEBAR = "sidebar"
+CONF_DEVICE_CONTROL = "device_control"
 # Who sees Lumo in the sidebar: "hidden", "admin" or "everyone".
 DEFAULT_SIDEBAR = "admin"
 

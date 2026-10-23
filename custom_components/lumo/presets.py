@@ -17,7 +17,7 @@ from typing import Any
 
 import yaml
 
-from .const import CONF_FUNCTIONS, DEFAULT_CONF_FUNCTIONS, RECOMMENDED_CONVERSATION_OPTIONS
+from .const import CONF_DEVICE_CONTROL, CONF_FUNCTIONS, DEFAULT_CONF_FUNCTIONS, RECOMMENDED_CONVERSATION_OPTIONS
 
 CONF_TOOLS = "tools"
 CONF_NODE_RED_URL = "node_red_url"
@@ -162,5 +162,6 @@ def quick_setup_options(user_input: dict[str, Any]) -> dict[str, Any]:
 
     return {
         **RECOMMENDED_CONVERSATION_OPTIONS,
+        CONF_DEVICE_CONTROL: "execute_services" in user_input.get(CONF_TOOLS, []),
         CONF_FUNCTIONS: yaml.safe_dump(functions, sort_keys=False, allow_unicode=True, width=1000),
     }

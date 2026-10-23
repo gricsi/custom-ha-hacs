@@ -65,7 +65,9 @@ from `GET /models`, labelled with each model's context window.
 Adding an agent asks only for a name and the tools to give it — **Control devices**, **Read Home
 Assistant logs**, **Read Node-RED flows** — plus the Node-RED URL and login if you tick that one.
 Everything else starts on the recommended settings, and the function YAML is generated for you.
-The log and Node-RED tools are read-only and say so to Home Assistant. Tick **Customize everything**
+The log and Node-RED tools are read-only and say so to Home Assistant. Leaving **Control devices**
+unticked leaves Lumo with read-only tools only: Home Assistant's own device control and exposed
+scripts are withheld too (the **Control devices** switch in the agent's settings). Tick **Customize everything**
 for the full settings, prefilled; **Reconfigure** always opens them.
 
 Give Lumo its own read-only Node-RED user. The login is stored in the agent's function YAML, in
@@ -74,13 +76,14 @@ Home Assistant's `.storage`, like every other function credential.
 ## Conversation history and the chat card
 
 The Assist dialog forgets its messages when you close it, and Home Assistant drops a conversation
-after five minutes. Lumo keeps each signed-in user's last 20 messages in `.storage/lumo.history`
-and continues from them, so closing the dialog no longer loses the thread. Voice satellites have
-no user and are never remembered.
+after five minutes. Lumo keeps each signed-in user's last 20 messages with each agent in
+`.storage/lumo.history` and continues from them, so closing the dialog no longer loses the thread.
+History is per agent, so what one agent said is never replayed into another. It expires after 30
+days and is deleted with the user. Voice satellites have no user and are never remembered.
 
 - Turn it off per agent with **Remember conversations** in the agent's options.
-- `lumo.clear_history` forgets your own history; run without a user (from an automation) it
-  forgets everyone's.
+- `lumo.clear_history` forgets your own history. Run without a user, as most automations are, it
+  does nothing unless `all: true` is set, which forgets everyone's and is refused to non-admins.
 
 To *see* the history, open **Lumo** in the sidebar: the same chat, full page. Who sees that entry
 is the **Show Lumo in the sidebar** setting on the Lumo entry (Reconfigure) — hidden, admins only

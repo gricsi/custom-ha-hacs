@@ -110,13 +110,15 @@
             "functions": "Functions",
             "context_threshold": "Context threshold",
             "context_truncate_strategy": "Context truncation strategy when exceeding threshold",
-            "remember_history": "Remember conversations"
+            "remember_history": "Remember conversations",
+            "device_control": "Control devices"
           },
           "data_description": {
             "functions": "Tools the model may call, in OmniConv's YAML function format.",
             "context_threshold": "Maximum number of tokens to keep in the conversation history before shortening it.",
             "context_truncate_strategy": "Method used to shorten conversation history when it exceeds the threshold.",
-            "remember_history": "Keep each user's last turns in .storage so a new Assist conversation continues where the last one ended. Users without a login (voice satellites) are never remembered."
+            "remember_history": "Keep each user's last turns in .storage so a new Assist conversation continues where the last one ended. Users without a login (voice satellites) are never remembered.",
+            "device_control": "Off: Lumo can only use tools that read — no Assist device control, no scripts, and only custom functions that declare read_only: true."
           }
         }
       },
@@ -202,7 +204,13 @@
     },
     "clear_history": {
       "name": "Clear conversation history",
-      "description": "Forget the saved Lumo conversation of the user who runs this. Run without a user, as an automation does, it forgets everyone's."
+      "description": "Forget the saved Lumo conversations of the user who runs this. Run without a user, as most automations do, it does nothing unless All users is set.",
+      "fields": {
+        "all": {
+          "name": "All users",
+          "description": "Forget every user's saved conversations. Refused when run by a non-admin user."
+        }
+      }
     }
   },
   "exceptions": {

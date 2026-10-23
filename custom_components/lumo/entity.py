@@ -228,20 +228,25 @@ def tool_result_data(content: Any) -> Any:
 
 
 def trim_messages(messages: list[ChatCompletionMessageParam], threshold: int) -> list[ChatCompletionMessageParam]:
-    """Drop the earlier turns once the conversation is estimated over `threshold` tokens.
+    """Drop the oldest turns until the conversation is estimated under `threshold` tokens.
 
     The estimate is four characters to a token, which is close enough to keep a long
-    conversation (or a restored history) from crowding out the current turn. System
-    messages are not counted: they are never dropped, and exposed entities can make the
-    prompt alone exceed the threshold, which would then discard all history every turn.
-    What is kept is every system message and the current turn from its user message on,
-    so a tool call is never separated from its result. Zero disables trimming.
+    conversation (or a restored history) from crowding out the current turn. Whole turns go,
+    oldest first, each from its user message on, so a tool call is never separated from its
+    result; the current turn always stays even if it alone is over. System messages are
+    never dropped and not counted: exposed entities can make the prompt alone exceed the
+    threshold, which would otherwise discard all history every turn. Zero disables trimming.
     """
+    system = [m for m in messages if m["role"] == "system"]
     conversation_only = [m for m in messages if m["role"] != "system"]
-    if not threshold or len(_serialize_json(conversation_only)) // 4 <= threshold:
+    turn_starts = [i for i, m in enumerate(conversation_only) if m["role"] == "user"]
+    if not threshold or not turn_starts:
         return messages
-    last_user = max((i for i, m in enumerate(messages) if m["role"] == "user"), default=0)
-    return [m for m in messages[:last_user] if m["role"] == "system"] + messages[last_user:]
+    for start in [0, *turn_starts]:
+        kept = conversation_only[start:]
+        if len(_serialize_json(kept)) // 4 <= threshold or start == turn_starts[-1]:
+            break
+    return messages if start == 0 else system + kept
 
 
 def _convert_content_to_messages(
@@ -419,6 +424,25 @@ class LumoBaseLLMEntity(Entity):
         self._cached_formatted_tools: list[ChatCompletionFunctionToolParam] | None = None
         self._cached_tools_hash: int | None = None
 
+    def _lumo_error(self, err: openai.OpenAIError) -> HomeAssistantError:
+        """Log a failed request, raise the repair issue it calls for, and say what went wrong."""
+        if isinstance(err, openai.RateLimitError):
+            detail = lumo_error_detail(err)
+            LOGGER.error("Rate limited by Lumo: %s", detail)
+            _set_repair_issue(self.hass, self.entry, "quota_exhausted")
+            return HomeAssistantError(f"Lumo rate limit reached: {detail}")
+        if isinstance(err, openai.AuthenticationError):
+            detail = lumo_error_detail(err)
+            LOGGER.error("Lumo rejected the API key: %s", detail)
+            _set_repair_issue(self.hass, self.entry, "invalid_api_key")
+            return HomeAssistantError(f"Lumo authentication failed: {detail}")
+        if isinstance(err, openai.APIStatusError):
+            detail = lumo_error_detail(err)
+            LOGGER.error("Error talking to Lumo (HTTP %s): %s", err.status_code, detail)
+            return HomeAssistantError(f"Error talking to Lumo: {detail}")
+        LOGGER.error("Error talking to Lumo: %s", err)
+        return HomeAssistantError("Error talking to Lumo")
+
     async def _async_handle_chat_log(
         self,
         chat_log: conversation.ChatLog,
@@ -524,23 +548,8 @@ class LumoBaseLLMEntity(Entity):
                 )
 
                 perf.checkpoint("Streaming & content conversion completed")
-            except openai.RateLimitError as err:
-                detail = lumo_error_detail(err)
-                LOGGER.error("Rate limited by Lumo: %s", detail)
-                _set_repair_issue(self.hass, self.entry, "quota_exhausted")
-                raise HomeAssistantError(f"Lumo rate limit reached: {detail}") from err
-            except openai.AuthenticationError as err:
-                detail = lumo_error_detail(err)
-                LOGGER.error("Lumo rejected the API key: %s", detail)
-                _set_repair_issue(self.hass, self.entry, "invalid_api_key")
-                raise HomeAssistantError(f"Lumo authentication failed: {detail}") from err
-            except openai.APIStatusError as err:
-                detail = lumo_error_detail(err)
-                LOGGER.error("Error talking to Lumo (HTTP %s): %s", err.status_code, detail)
-                raise HomeAssistantError(f"Error talking to Lumo: {detail}") from err
             except openai.OpenAIError as err:
-                LOGGER.error("Error talking to Lumo: %s", err)
-                raise HomeAssistantError("Error talking to Lumo") from err
+                raise self._lumo_error(err) from err
 
             if not chat_log.unresponded_tool_results:
                 perf.checkpoint("No more tool calls, conversation complete")
@@ -565,10 +574,8 @@ class LumoBaseLLMEntity(Entity):
                     self.entity_id, _transform_stream(chat_log, stream, self.entry.entry_id)
                 ):
                     pass
-            except openai.APIStatusError as err:
-                raise HomeAssistantError(f"Error talking to Lumo: {lumo_error_detail(err)}") from err
             except openai.OpenAIError as err:
-                raise HomeAssistantError("Error talking to Lumo") from err
+                raise self._lumo_error(err) from err
 
             if chat_log.unresponded_tool_results:
                 raise HomeAssistantError(

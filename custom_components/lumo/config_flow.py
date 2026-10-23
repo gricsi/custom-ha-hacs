@@ -45,6 +45,7 @@ from .presets import (
 )
 from .history import SIDEBAR_VISIBILITIES
 from .const import (
+    CONF_DEVICE_CONTROL,
     CONF_SIDEBAR,
     DEFAULT_SIDEBAR,
     CONF_REMEMBER_HISTORY,
@@ -213,6 +214,7 @@ class LumoConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 KEPT_WHEN_RECOMMENDED = (
+    CONF_DEVICE_CONTROL,
     CONF_FUNCTIONS,
     CONF_REMEMBER_HISTORY,
     CONF_CONTEXT_THRESHOLD,
@@ -423,6 +425,7 @@ class LumoSubentryFlowHandler(ConfigSubentryFlow):
             step_schema.update(
                 {
                     vol.Optional(CONF_FUNCTIONS, default=DEFAULT_CONF_FUNCTIONS_STR): TemplateSelector(),
+                    vol.Optional(CONF_DEVICE_CONTROL, default=True): BooleanSelector(),
                     vol.Optional(CONF_REMEMBER_HISTORY, default=True): BooleanSelector(),
                     vol.Optional(CONF_CONTEXT_THRESHOLD, default=DEFAULT_CONTEXT_THRESHOLD): int,
                     vol.Optional(

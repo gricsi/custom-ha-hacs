@@ -6,7 +6,7 @@
 // exactly as it does for the dialog. It only reads; it has no way to change anything.
 //
 //   type: custom:lumo-chat-card
-//   agent_id: conversation.lumo   # optional, defaults to the preferred agent
+//   agent_id: conversation.lumo   # optional, defaults to the Lumo agent you used last
 //   title: Lumo                   # optional
 
 class LumoChatCard extends HTMLElement {
@@ -14,7 +14,9 @@ class LumoChatCard extends HTMLElement {
     this._config = config || {};
     this._messages = [];
     this._conversationId = null;
-    this._loaded = false;
+    this._agentId = this._config.agent_id ?? null;
+    this._loaded = false; // the fetch has started
+    this._fetched = false; // ...and finished
     this._render();
   }
 
@@ -36,11 +38,18 @@ class LumoChatCard extends HTMLElement {
 
   async _loadHistory() {
     try {
-      const { messages } = await this._hass.callWS({ type: "lumo/history" });
+      // History is per agent. Without one configured, the server picks the Lumo agent
+      // this user talked to last, and the card keeps talking to that one.
+      const { agent_id, messages } = await this._hass.callWS({
+        type: "lumo/history",
+        ...(this._agentId ? { agent_id: this._agentId } : {}),
+      });
+      this._agentId = this._agentId ?? agent_id;
       this._messages = messages;
     } catch (err) {
       this._messages = [{ role: "error", content: `Could not load history: ${err.message || err}` }];
     }
+    this._fetched = true;
     this._renderMessages();
   }
 
@@ -58,7 +67,7 @@ class LumoChatCard extends HTMLElement {
         text,
         language: this._hass.language,
         conversation_id: this._conversationId,
-        ...(this._config.agent_id ? { agent_id: this._config.agent_id } : {}),
+        ...(this._agentId ? { agent_id: this._agentId } : {}),
       });
       this._conversationId = result.conversation_id;
       const speech = result.response?.speech?.plain?.speech ?? "";
@@ -109,7 +118,7 @@ class LumoChatCard extends HTMLElement {
     list.replaceChildren(
       ...(this._messages.length
         ? this._messages.map(({ role, content }) => this._bubble(role, content))
-        : [this._bubble("empty", this._loaded ? "No saved conversation yet." : "Loading…")]),
+        : [this._bubble("empty", this._fetched ? "No saved conversation yet." : "Loading…")]),
       ...(this._busy ? [this._bubble("assistant", "…")] : []),
     );
     list.scrollTop = list.scrollHeight;

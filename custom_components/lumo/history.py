@@ -2,15 +2,20 @@
 
 Core keeps a chat log in memory for five minutes, and the Assist dialog forgets its
 conversation id when closed, so every reopen starts from nothing. This keeps the text of
-each user's last turns in `.storage/lumo.history` and seeds a fresh chat log with them.
+each user's last turns with each agent in `.storage/lumo.history` and seeds a fresh chat
+log with them.
 
 Only user and assistant text is kept. Tool calls are left out because a restored call
 without its result is an invalid request, and tool results can carry far more than the
-conversation itself. Nothing outside `.storage` is ever written.
+conversation itself. History is per agent, so what an agent with tools said is never
+replayed into another -- which may even talk to another backend. It expires after
+RETENTION and goes with the user when they are deleted. Nothing outside `.storage` is
+ever written.
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -18,46 +23,67 @@ import voluptuous as vol
 
 from homeassistant.components import conversation, frontend, panel_custom, websocket_api
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 
 STORAGE_KEY = f"{DOMAIN}.history"
 MAX_MESSAGES = 20
+RETENTION = timedelta(days=30)
+# Batches the writes of a burst of turns into one; history is a convenience, so losing
+# the last few seconds of it to a power cut is an acceptable trade for the SD card.
+SAVE_DELAY = 10
 CARD_URL = f"/{DOMAIN}/lumo-chat-card.js"
 CARD_PATH = Path(__file__).parent / "frontend" / "lumo-chat-card.js"
 PANEL_URL_PATH = DOMAIN
 SIDEBAR_VISIBILITIES = ("hidden", "admin", "everyone")
 
+# {agent_id: {user_id: {"updated": iso timestamp, "turns": [{"role", "content"}]}}}
+HistoryData = dict[str, dict[str, dict[str, Any]]]
+
 
 class ConversationHistory:
-    """Load, seed and save the recent text turns of each user."""
+    """Load, seed and save the recent text turns of each user with each agent."""
 
     def __init__(self, hass: HomeAssistant) -> None:
-        self._store: Store[dict[str, list[dict[str, str]]]] = Store(hass, 1, STORAGE_KEY)
-        self._data: dict[str, list[dict[str, str]]] | None = None
+        self._store: Store[HistoryData] = Store(hass, 1, STORAGE_KEY)
+        self._data: HistoryData | None = None
 
-    async def _async_load(self) -> dict[str, list[dict[str, str]]]:
+    async def _async_load(self) -> HistoryData:
         if self._data is None:
-            self._data = await self._store.async_load() or {}
+            loaded = await self._store.async_load() or {}
+            # A pre-release build stored a bare list per user; it is not worth migrating.
+            self._data = {agent: users for agent, users in loaded.items() if isinstance(users, dict)}
         return self._data
+
+    async def _async_turns(self, user_id: str, agent_id: str) -> list[dict[str, str]]:
+        """The user's unexpired turns with the agent."""
+        saved = (await self._async_load()).get(agent_id, {}).get(user_id)
+        if not saved:
+            return []
+        updated = dt_util.parse_datetime(saved["updated"]) or datetime.min.replace(tzinfo=dt_util.UTC)
+        if dt_util.utcnow() - updated > RETENTION:
+            del self._data[agent_id][user_id]
+            self._schedule_save()
+            return []
+        return list(saved["turns"])
 
     async def async_restore(self, user_id: str | None, chat_log: conversation.ChatLog, agent_id: str) -> None:
         """Insert the user's saved turns after the system prompt of a fresh chat log."""
         # A log with a reply in it is still live in core and already holds its history.
         if not user_id or any(c.role == "assistant" for c in chat_log.content):
             return
-        saved = (await self._async_load()).get(user_id, [])
         chat_log.content[1:1] = [
             conversation.UserContent(content=turn["content"])
             if turn["role"] == "user"
             else conversation.AssistantContent(agent_id=agent_id, content=turn["content"])
-            for turn in saved
+            for turn in await self._async_turns(user_id, agent_id)
         ]
 
-    async def async_save(self, user_id: str | None, chat_log: conversation.ChatLog) -> None:
-        """Keep the last text turns of the chat log for the user."""
+    async def async_save(self, user_id: str | None, chat_log: conversation.ChatLog, agent_id: str) -> None:
+        """Keep the last text turns of the chat log for the user and agent."""
         if not user_id:
             return
         turns = [
@@ -69,39 +95,61 @@ class ConversationHistory:
         if turns and turns[0]["role"] == "assistant":
             turns = turns[1:]
         data = await self._async_load()
-        data[user_id] = turns
-        await self._store.async_save(data)
+        data.setdefault(agent_id, {})[user_id] = {"updated": dt_util.utcnow().isoformat(), "turns": turns}
+        self._schedule_save()
 
-    async def async_get_messages(self, user_id: str) -> list[dict[str, str]]:
-        """Return the user's saved turns as {"role", "content"} dicts."""
-        return list((await self._async_load()).get(user_id, []))
+    async def async_get_messages(self, user_id: str, agent_id: str | None) -> tuple[str | None, list[dict[str, str]]]:
+        """Return an agent and the user's turns with it -- the most recent agent if none is given."""
+        if agent_id is None:
+            data = await self._async_load()
+            recent = [(users[user_id]["updated"], agent) for agent, users in data.items() if user_id in users]
+            if not recent:
+                return None, []
+            agent_id = max(recent)[1]
+        return agent_id, await self._async_turns(user_id, agent_id)
 
     async def async_clear(self, user_id: str | None) -> None:
-        """Forget one user's turns, or everyone's when no user is given."""
+        """Forget one user's turns with every agent, or everyone's when no user is given."""
         data = await self._async_load()
         if user_id is None:
             data.clear()
         else:
-            data.pop(user_id, None)
-        await self._store.async_save(data)
+            for users in data.values():
+                users.pop(user_id, None)
+        self._schedule_save()
+
+    async def async_flush(self) -> None:
+        """Write any pending change now."""
+        if self._data is not None:
+            await self._store.async_save(self._data)
+
+    @callback
+    def _schedule_save(self) -> None:
+        self._store.async_delay_save(lambda: self._data, SAVE_DELAY)
 
 
 @callback
 def async_get_history(hass: HomeAssistant) -> ConversationHistory:
     """Return the one history every Lumo agent shares, so none overwrites another's users."""
     if STORAGE_KEY not in hass.data:
-        hass.data[STORAGE_KEY] = ConversationHistory(hass)
+        history = hass.data[STORAGE_KEY] = ConversationHistory(hass)
+
+        async def forget_removed_user(event: Event) -> None:
+            await history.async_clear(event.data["user_id"])
+
+        # The auth manager fires this when a user is deleted.
+        hass.bus.async_listen("user_removed", forget_removed_user)
     return hass.data[STORAGE_KEY]
 
 
-@websocket_api.websocket_command({vol.Required("type"): "lumo/history"})
+@websocket_api.websocket_command({vol.Required("type"): "lumo/history", vol.Optional("agent_id"): str})
 @websocket_api.async_response
 async def websocket_history(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Return the caller's saved turns for the chat card. Read-only, and only ever the caller's."""
-    messages = await async_get_history(hass).async_get_messages(connection.user.id)
-    connection.send_result(msg["id"], {"messages": messages})
+    agent_id, messages = await async_get_history(hass).async_get_messages(connection.user.id, msg.get("agent_id"))
+    connection.send_result(msg["id"], {"agent_id": agent_id, "messages": messages})
 
 
 async def async_register_card(hass: HomeAssistant) -> None:
@@ -115,14 +163,23 @@ def _card_module_url() -> str:
     return f"{CARD_URL}?v={CARD_PATH.stat().st_mtime_ns}"
 
 
-async def async_update_panel(hass: HomeAssistant, visibility: str) -> None:
-    """Show the chat full page in the sidebar: hidden, for admins only, or for everyone.
+async def async_set_panel_visibility(hass: HomeAssistant, entry_id: str, visibility: str | None) -> None:
+    """Record one entry's sidebar setting (None when it unloads) and apply the widest one.
 
-    panel_custom refuses to overwrite a panel, and reconfiguring reloads the entry, so
-    any existing one is removed first.
+    There is one /lumo panel however many Lumo entries there are, so each entry's setting
+    is kept and the most permissive wins; otherwise the last entry to load or unload would
+    decide for all of them. panel_custom refuses to overwrite a panel, so any existing one
+    is removed first.
     """
+    settings: dict[str, str] = hass.data.setdefault(f"{DOMAIN}_panel", {})
+    if visibility is None:
+        settings.pop(entry_id, None)
+    else:
+        settings[entry_id] = visibility
+    widest = max(settings.values(), key=SIDEBAR_VISIBILITIES.index, default="hidden")
+
     frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
-    if visibility == "hidden":
+    if widest == "hidden":
         return
     await panel_custom.async_register_panel(
         hass,
@@ -131,5 +188,5 @@ async def async_update_panel(hass: HomeAssistant, visibility: str) -> None:
         sidebar_title="Lumo",
         sidebar_icon="mdi:chat-processing",
         module_url=_card_module_url(),
-        require_admin=visibility == "admin",
+        require_admin=widest == "admin",
     )

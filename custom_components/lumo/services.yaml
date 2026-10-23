@@ -19,3 +19,8 @@ generate_content:
         - /config/www/snapshot.jpg
 
 clear_history:
+  fields:
+    all:
+      default: false
+      selector:
+        boolean:

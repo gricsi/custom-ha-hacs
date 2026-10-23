@@ -5,12 +5,13 @@ from __future__ import annotations
 from types import MappingProxyType
 
 import openai
-from homeassistant.components import frontend, websocket_api
+from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_API_KEY, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.typing import ConfigType
 
@@ -30,7 +31,7 @@ from .const import (
     VALIDATION_CHAT_MODEL,
 )
 from .api import async_setup_api
-from .history import PANEL_URL_PATH, async_register_card, async_update_panel, websocket_history
+from .history import async_register_card, async_set_panel_visibility, websocket_history
 from .services import async_setup_services
 
 PLATFORMS = (Platform.AI_TASK, Platform.CONVERSATION, Platform.SENSOR)
@@ -123,8 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: LumoConfigEntry) -> bool
 
     await async_setup_api(hass, entry)
 
-    await async_update_panel(hass, entry.data.get(CONF_SIDEBAR, DEFAULT_SIDEBAR))
-    entry.async_on_unload(lambda: frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False))
+    await async_set_panel_visibility(hass, entry.entry_id, entry.data.get(CONF_SIDEBAR, DEFAULT_SIDEBAR))
 
     entry.async_on_unload(entry.add_update_listener(async_update_options))
 
@@ -133,7 +133,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: LumoConfigEntry) -> bool
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload Lumo."""
+    await async_set_panel_visibility(hass, entry.entry_id, None)
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove the entry's repair issues: only a successful reply clears them, and it will get none."""
+    for key in ("invalid_api_key", "quota_exhausted"):
+        ir.async_delete_issue(hass, DOMAIN, f"{key}_{entry.entry_id}")
 
 
 async def async_update_options(hass: HomeAssistant, entry: LumoConfigEntry) -> None:

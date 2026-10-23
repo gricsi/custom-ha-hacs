@@ -99,3 +99,11 @@ def test_a_large_system_prompt_does_not_count() -> None:
     big_system = {"role": "system", "content": "e" * 100_000}
     messages = [big_system, *OLD, *CURRENT]
     assert trim_messages(messages, 1_000) == messages
+
+
+def test_only_as_many_old_turns_are_dropped_as_needed() -> None:
+    """Dropping everything once over the threshold meant that after one large tool result,
+    every later turn lost all of its context. The oldest turns go first, one at a time."""
+    oldest = [{"role": "user", "content": "a" * 2000}, {"role": "assistant", "content": "b" * 2000}]
+    recent = [{"role": "user", "content": "short"}, {"role": "assistant", "content": "reply"}]
+    assert trim_messages([SYSTEM, *oldest, *recent, *CURRENT], 300) == [SYSTEM, *recent, *CURRENT]

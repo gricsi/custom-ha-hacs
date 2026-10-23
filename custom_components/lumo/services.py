@@ -19,7 +19,7 @@ from homeassistant.core import (
     ServiceResponse,
     SupportsResponse,
 )
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError, Unauthorized
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import selector
 from homeassistant.helpers.typing import ConfigType
@@ -133,7 +133,25 @@ async def async_setup_services(hass: HomeAssistant, config: ConfigType) -> None:
     )
 
     async def clear_history(call: ServiceCall) -> None:
-        """Forget the caller's saved conversation, or everyone's when run without a user."""
-        await async_get_history(hass).async_clear(call.context.user_id)
+        """Forget the caller's saved conversation, or with `all`, everyone's.
 
-    hass.services.async_register(DOMAIN, SERVICE_CLEAR_HISTORY, clear_history, schema=vol.Schema({}))
+        A call without a user clears nothing unless it says `all`: state-triggered
+        automations run without one, so "no user means everyone" let a non-admin's
+        button wipe the whole household's history. `all` is refused to a non-admin user.
+        """
+        user_id = call.context.user_id
+        if call.data["all"]:
+            if user_id:
+                user = await hass.auth.async_get_user(user_id)
+                if user is None or not user.is_admin:
+                    raise Unauthorized(context=call.context)
+            await async_get_history(hass).async_clear(None)
+        elif user_id:
+            await async_get_history(hass).async_clear(user_id)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLEAR_HISTORY,
+        clear_history,
+        schema=vol.Schema({vol.Optional("all", default=False): cv.boolean}),
+    )

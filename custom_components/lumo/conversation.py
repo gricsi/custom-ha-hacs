@@ -16,6 +16,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import LumoConfigEntry
 from .const import (
+    CONF_DEVICE_CONTROL,
     CONF_FUNCTIONS,
     CONF_LLM_HASS_API,
     CONF_PROMPT,
@@ -97,6 +98,25 @@ def as_tool_result(data: Any, error: bool = False) -> Any:
     """
     result_cls = getattr(llm, "ToolResult", None)
     return data if result_cls is None else result_cls(data=data, error=error)
+
+
+def without_control_tools(tools: list[llm.Tool]) -> list[llm.Tool]:
+    """Keep only tools that read: for an agent with device control turned off.
+
+    Lumo always attaches core's Assist tools, so leaving execute_services out was not
+    enough -- HassTurnOn and every exposed script stayed callable. Core's intent and
+    script tools go, and so does any custom function that does not declare read_only.
+    Everything else core provides (GetLiveContext, the date and time) only reads.
+    """
+    return [
+        tool
+        for tool in tools
+        if not isinstance(tool, (llm.IntentTool, llm.ActionTool))
+        and not (
+            isinstance(tool, CustomFunctionTool)
+            and (tool.function_spec.get("annotations") or {}).get("read_only") is not True
+        )
+    ]
 
 
 class CustomFunctionTool(llm.Tool):
@@ -372,6 +392,8 @@ class LumoEntity(
         custom_function_tools = self._cached_tools or self._get_custom_functions_as_tools()
         if custom_function_tools and chat_log.llm_api:
             chat_log.llm_api.tools.extend(custom_function_tools)
+        if not options.get(CONF_DEVICE_CONTROL, True) and chat_log.llm_api:
+            chat_log.llm_api.tools[:] = without_control_tools(chat_log.llm_api.tools)
             if perf_enabled:
                 elapsed = time.time() - start_time
                 LOGGER.info("⏱️  Load and extend custom function tools: %.3fs", elapsed)
@@ -384,5 +406,5 @@ class LumoEntity(
 
         await self._async_handle_chat_log(chat_log)
 
-        await history.async_save(user_id, chat_log)
+        await history.async_save(user_id, chat_log, self.entity_id)
         return conversation.async_get_result_from_chat_log(user_input, chat_log)

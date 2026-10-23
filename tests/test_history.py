@@ -59,7 +59,7 @@ def test_fresh_log_is_seeded_with_the_users_previous_turns() -> None:
         history = ConversationHistory(hass)
         first = new_log(hass, "Open the garage")
         answer(first, "Opened.")
-        await history.async_save("alice", first)
+        await history.async_save("alice", first, AGENT)
 
         second = new_log(hass, "Close it again")
         await history.async_restore("alice", second, AGENT)
@@ -81,7 +81,7 @@ def test_live_log_is_left_alone() -> None:
         history = ConversationHistory(hass)
         chat_log = new_log(hass, "Open the garage")
         answer(chat_log, "Opened.")
-        await history.async_save("alice", chat_log)
+        await history.async_save("alice", chat_log, AGENT)
 
         chat_log.async_add_user_content(conversation.UserContent(content="Close it"))
         await history.async_restore("alice", chat_log, AGENT)
@@ -96,8 +96,8 @@ def test_history_is_per_user_and_skipped_without_one() -> None:
         history = ConversationHistory(hass)
         chat_log = new_log(hass, "My secret")
         answer(chat_log, "Noted.")
-        await history.async_save("alice", chat_log)
-        await history.async_save(None, chat_log)
+        await history.async_save("alice", chat_log, AGENT)
+        await history.async_save(None, chat_log, AGENT)
 
         bob = new_log(hass, "Hi")
         await history.async_restore("bob", bob, AGENT)
@@ -126,7 +126,7 @@ def test_only_text_is_kept_and_capped() -> None:
         for i in range(1, MAX_MESSAGES):
             answer(chat_log, f"reply {i}")
             chat_log.async_add_user_content(conversation.UserContent(content=f"turn {i}"))
-        await history.async_save("alice", chat_log)
+        await history.async_save("alice", chat_log, AGENT)
 
         fresh = new_log(hass, "now")
         await history.async_restore("alice", fresh, AGENT)
@@ -146,7 +146,7 @@ def test_survives_a_restart() -> None:
     async def save(hass: HomeAssistant) -> None:
         chat_log = new_log(hass, "Remember me")
         answer(chat_log, "Will do.")
-        await ConversationHistory(hass).async_save("alice", chat_log)
+        await ConversationHistory(hass).async_save("alice", chat_log, AGENT)
 
     async def restore(hass: HomeAssistant) -> list[tuple[str, str]]:
         chat_log = new_log(hass, "Still there?")
@@ -172,7 +172,7 @@ def test_writes_nothing_but_its_own_storage_file() -> None:
     async def body(hass: HomeAssistant) -> None:
         chat_log = new_log(hass, "hi")
         answer(chat_log, "hello")
-        await ConversationHistory(hass).async_save("alice", chat_log)
+        await ConversationHistory(hass).async_save("alice", chat_log, AGENT)
 
     run(body, config_dir)
 
@@ -249,7 +249,7 @@ def test_clear_one_user_or_everyone() -> None:
         for user in ("alice", "bob", "carol"):
             chat_log = new_log(hass, f"{user} here")
             answer(chat_log, "hi")
-            await history.async_save(user, chat_log)
+            await history.async_save(user, chat_log, AGENT)
 
         await history.async_clear("alice")
         after_one = []
@@ -259,6 +259,7 @@ def test_clear_one_user_or_everyone() -> None:
             after_one.append(texts(chat_log))
 
         await history.async_clear(None)
+        await history.async_flush()
         carol = new_log(hass, "again")
         await ConversationHistory(hass).async_restore("carol", carol, AGENT)  # re-read from disk
         return [*after_one, texts(carol)]
@@ -269,35 +270,61 @@ def test_clear_one_user_or_everyone() -> None:
     assert carol == [("user", "again")]
 
 
-def test_clear_history_action_clears_the_caller_or_everyone() -> None:
+def test_clear_history_action() -> None:
+    """The caller's history; nothing without a caller; everyone's only when asked, and not by a non-admin.
+
+    "No user means everyone" used to apply to every automation, and a state-triggered one
+    runs without a user -- so a non-admin's button could wipe the whole household's history.
+    """
+    from types import SimpleNamespace
+
+    import pytest
     from homeassistant.core import Context
+    from homeassistant.exceptions import Unauthorized
 
     from custom_components.lumo.const import DOMAIN
     from custom_components.lumo.history import async_get_history
     from custom_components.lumo.services import async_setup_services
 
-    async def restored(hass: HomeAssistant, user: str) -> list[tuple[str, str]]:
-        chat_log = new_log(hass, "again")
-        await async_get_history(hass).async_restore(user, chat_log, AGENT)
-        return texts(chat_log)[:-1]
+    async def remaining(hass: HomeAssistant) -> set[str]:
+        return {user for user in ("alice", "bob") if (await async_get_history(hass).async_get_messages(user, AGENT))[1]}
 
-    async def body(hass: HomeAssistant) -> tuple[list, list, list]:
-        await async_setup_services(hass, {})
+    async def seed(hass: HomeAssistant) -> None:
         for user in ("alice", "bob"):
             chat_log = new_log(hass, f"{user} here")
             answer(chat_log, "hi")
-            await async_get_history(hass).async_save(user, chat_log)
+            await async_get_history(hass).async_save(user, chat_log, AGENT)
 
-        await hass.services.async_call(DOMAIN, "clear_history", {}, blocking=True, context=Context(user_id="alice"))
-        alice, bob = await restored(hass, "alice"), await restored(hass, "bob")
+    async def clear(hass: HomeAssistant, data: dict, user_id: str | None) -> None:
+        await hass.services.async_call(DOMAIN, "clear_history", data, blocking=True, context=Context(user_id=user_id))
 
-        await hass.services.async_call(DOMAIN, "clear_history", {}, blocking=True, context=Context())
-        return alice, bob, await restored(hass, "bob")
+    async def body(hass: HomeAssistant) -> list[set[str]]:
+        users = {"alice": False, "admin": True}
+        hass.auth = SimpleNamespace(
+            async_get_user=lambda user_id: _done(SimpleNamespace(is_admin=users.get(user_id, False)))
+        )
+        await async_setup_services(hass, {})
+        seen = []
+        await seed(hass)
+        await clear(hass, {}, "alice")
+        seen.append(await remaining(hass))
+        await clear(hass, {}, None)
+        seen.append(await remaining(hass))
+        with pytest.raises(Unauthorized):
+            await clear(hass, {"all": True}, "alice")
+        seen.append(await remaining(hass))
+        await clear(hass, {"all": True}, "admin")
+        seen.append(await remaining(hass))
+        await seed(hass)
+        await clear(hass, {"all": True}, None)
+        seen.append(await remaining(hass))
+        return seen
 
-    alice, bob, bob_after_all = run(body)
-    assert alice == []
-    assert bob == [("user", "bob here"), ("assistant", "hi")]
-    assert bob_after_all == []
+    assert run(body) == [{"bob"}, {"bob"}, {"bob"}, set(), set()]
+
+
+async def _done(value):
+    return value
 
 
 def test_an_agent_with_history_off_neither_restores_nor_saves(monkeypatch) -> None:
@@ -320,7 +347,7 @@ def test_an_agent_with_history_off_neither_restores_nor_saves(monkeypatch) -> No
     async def body(hass: HomeAssistant) -> list[tuple[str, str]]:
         seeded = new_log(hass, "from another agent")
         answer(seeded, "remembered")
-        await async_get_history(hass).async_save("alice", seeded)
+        await async_get_history(hass).async_save("alice", seeded, AGENT)
 
         entity = LumoEntity(
             SimpleNamespace(entry_id="e"),
@@ -347,3 +374,66 @@ def test_an_agent_with_history_off_neither_restores_nor_saves(monkeypatch) -> No
         return texts(fresh)[:-1]
 
     assert run(body) == [("user", "from another agent"), ("assistant", "remembered")], "nothing was saved"
+
+
+def test_history_is_kept_per_agent() -> None:
+    """Text from an agent with tools must not be replayed into a different agent."""
+
+    async def body(hass: HomeAssistant) -> list[tuple[str, str]]:
+        history = ConversationHistory(hass)
+        chat_log = new_log(hass, "read my logs")
+        answer(chat_log, "the logs say ...")
+        await history.async_save("alice", chat_log, "conversation.lumo_tools")
+
+        other = new_log(hass, "hello")
+        await history.async_restore("alice", other, "conversation.lumo_plain")
+        return texts(other)
+
+    assert run(body) == [("user", "hello")]
+
+
+def test_old_conversations_and_deleted_users_are_forgotten(monkeypatch) -> None:
+    import custom_components.lumo.history as history_module
+    from homeassistant.util import dt as dt_util
+
+    async def body(hass: HomeAssistant) -> tuple[list, list, list]:
+        history = history_module.async_get_history(hass)
+        for user in ("alice", "gone"):
+            chat_log = new_log(hass, f"{user} here")
+            answer(chat_log, "hi")
+            await history.async_save(user, chat_log, AGENT)
+
+        hass.bus.async_fire("user_removed", {"user_id": "gone"})
+        await hass.async_block_till_done()
+
+        later = dt_util.utcnow() + history_module.RETENTION / 2
+        monkeypatch.setattr(dt_util, "utcnow", lambda: later)
+        gone, alice_mid = new_log(hass, "x"), new_log(hass, "x")
+        await history.async_restore("gone", gone, AGENT)
+        await history.async_restore("alice", alice_mid, AGENT)
+
+        much_later = later + history_module.RETENTION
+        monkeypatch.setattr(dt_util, "utcnow", lambda: much_later)
+        alice_late = new_log(hass, "x")
+        await history.async_restore("alice", alice_late, AGENT)
+        return texts(gone), texts(alice_mid), texts(alice_late)
+
+    gone, alice_mid, alice_late = run(body)
+    assert gone == [("user", "x")]
+    assert alice_mid[0] == ("user", "alice here")
+    assert alice_late == [("user", "x")]
+
+
+def test_saving_batches_disk_writes() -> None:
+    """Every turn rewrote the whole file at once; on an SD card that adds up."""
+
+    async def body(hass: HomeAssistant) -> bool:
+        history = ConversationHistory(hass)
+        chat_log = new_log(hass, "hi")
+        answer(chat_log, "hello")
+        await history.async_save("alice", chat_log, AGENT)
+        written_now = os.path.exists(hass.config.path(".storage", STORAGE_KEY))
+        await history.async_flush()
+        return written_now, os.path.exists(hass.config.path(".storage", STORAGE_KEY))
+
+    assert run(body) == (False, True)

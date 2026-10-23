@@ -16,16 +16,18 @@ import pytest
 from homeassistant.components.frontend import DATA_PANELS
 from homeassistant.core import HomeAssistant
 
-from custom_components.lumo.history import CARD_URL, PANEL_URL_PATH, async_update_panel
+from custom_components.lumo.history import CARD_URL, PANEL_URL_PATH, async_set_panel_visibility
 
 
-def panels_after(*visibilities: str) -> dict[str, Any]:
+def panels_after(*changes: str | tuple[str, str | None]) -> dict[str, Any]:
+    """Apply sidebar settings in order: a bare visibility is entry "e", a tuple names the entry."""
     async def main() -> dict[str, Any]:
         hass = HomeAssistant(tempfile.mkdtemp())
         hass.data[DATA_PANELS] = {}
         try:
-            for visibility in visibilities:
-                await async_update_panel(hass, visibility)
+            for change in changes:
+                entry_id, visibility = change if isinstance(change, tuple) else ("e", change)
+                await async_set_panel_visibility(hass, entry_id, visibility)
             return {path: panel.to_response() for path, panel in hass.data[DATA_PANELS].items()}
         finally:
             await hass.async_stop(force=True)
@@ -51,6 +53,13 @@ def test_changing_visibility_replaces_the_panel() -> None:
     """A reload registers again; panel_custom refuses to overwrite, so the old one must go first."""
     assert panels_after("admin", "everyone")[PANEL_URL_PATH]["require_admin"] is False
     assert panels_after("everyone", "hidden") == {}
+
+
+def test_two_entries_get_the_wider_setting_and_unloading_one_keeps_the_other() -> None:
+    """There is one /lumo panel; neither entry may hide or remove it for the other."""
+    assert panels_after(("a", "everyone"), ("b", "hidden"))[PANEL_URL_PATH]["require_admin"] is False
+    assert panels_after(("a", "admin"), ("b", "everyone"), ("b", None))[PANEL_URL_PATH]["require_admin"] is True
+    assert panels_after(("a", "admin"), ("a", None)) == {}
 
 
 def test_the_card_file_defines_the_panel_element() -> None:

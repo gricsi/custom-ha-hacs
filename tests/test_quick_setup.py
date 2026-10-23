@@ -237,3 +237,38 @@ def test_an_agent_without_a_chosen_model_uses_lumo_max(options: dict) -> None:
 
     asyncio.run(main())
     assert sent[0]["model"] == "lumo-max"
+
+
+@pytest.mark.parametrize(("tools", "control"), [(["execute_services", "read_logs"], True), (["read_logs"], False)])
+def test_the_control_devices_tick_sets_device_control(tools: list[str], control: bool) -> None:
+    from custom_components.lumo.const import CONF_DEVICE_CONTROL
+
+    assert quick_setup_options({CONF_TOOLS: tools})[CONF_DEVICE_CONTROL] is control
+
+
+def test_without_device_control_only_read_only_tools_remain() -> None:
+    """Lumo always attaches core's Assist tools, so leaving out execute_services was not enough:
+    HassTurnOn and friends stayed callable. Without device control, only tools that declare
+    themselves read-only are offered."""
+    from types import SimpleNamespace
+
+    from homeassistant.helpers import llm
+
+    from custom_components.lumo.conversation import CustomFunctionTool, without_control_tools
+
+    turn_on = llm.IntentTool(
+        "intent__HassTurnOn", SimpleNamespace(intent_type="HassTurnOn", description="", slot_schema=None)
+    )
+    script = llm.ActionTool.__new__(llm.ActionTool)
+    script.name = "script__open_garage"
+
+    class LiveContext(llm.Tool):
+        name = "homeassistant__GetLiveContext"
+        description = "Read states"
+
+    read_logs = CustomFunctionTool(TOOL_PRESETS["read_logs"]["spec"], TOOL_PRESETS["read_logs"]["function"])
+    execute = CustomFunctionTool(DEFAULT_CONF_FUNCTIONS[0]["spec"], DEFAULT_CONF_FUNCTIONS[0]["function"])
+    undeclared = CustomFunctionTool({"name": "mystery"}, {"type": "script"})
+
+    kept = without_control_tools([turn_on, script, LiveContext(), read_logs, execute, undeclared])
+    assert [tool.name for tool in kept] == ["homeassistant__GetLiveContext", "read_logs"]

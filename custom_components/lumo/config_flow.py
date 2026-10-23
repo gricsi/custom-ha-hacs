@@ -34,6 +34,15 @@ from homeassistant.helpers.selector import (
 )
 from homeassistant.helpers.typing import VolDictType
 
+from .presets import (
+    CONF_CUSTOMIZE,
+    CONF_NODE_RED_PASSWORD,
+    CONF_NODE_RED_URL,
+    CONF_NODE_RED_USERNAME,
+    CONF_TOOLS,
+    TOOL_PRESETS,
+    quick_setup_options,
+)
 from .const import (
     CONF_REMEMBER_HISTORY,
     CONF_BASE_URL,
@@ -195,6 +204,14 @@ class LumoConfigFlow(ConfigFlow, domain=DOMAIN):
         }
 
 
+KEPT_WHEN_RECOMMENDED = (
+    CONF_FUNCTIONS,
+    CONF_REMEMBER_HISTORY,
+    CONF_CONTEXT_THRESHOLD,
+    CONF_CONTEXT_TRUNCATE_STRATEGY,
+)
+
+
 class LumoSubentryFlowHandler(ConfigSubentryFlow):
     """Flow for managing Lumo subentries."""
 
@@ -236,9 +253,49 @@ class LumoSubentryFlowHandler(ConfigSubentryFlow):
         """Add a subentry."""
         if self._subentry_type == "ai_task_data":
             self.options = RECOMMENDED_AI_TASK_OPTIONS.copy()
-        else:
-            self.options = RECOMMENDED_CONVERSATION_OPTIONS.copy()
-        return await self.async_step_init()
+            return await self.async_step_init()
+
+        # A new conversation agent asks only for what cannot be defaulted: which tools,
+        # and where Node-RED is. "Customize" continues into the full settings, prefilled.
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                self.options = quick_setup_options(user_input)
+            except ValueError as err:
+                errors[str(err)] = f"{err}_required"
+            else:
+                if user_input[CONF_CUSTOMIZE]:
+                    # Off, or the first step's recommended path would save without the rest.
+                    self.options |= {CONF_NAME: user_input[CONF_NAME], CONF_RECOMMENDED: False}
+                    return await self.async_step_init()
+                return self.async_create_entry(title=user_input[CONF_NAME], data=self.options)
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(
+                    {
+                        vol.Required(CONF_NAME, default=DEFAULT_CONVERSATION_NAME): str,
+                        vol.Optional(CONF_TOOLS, default=["execute_services"]): SelectSelector(
+                            SelectSelectorConfig(
+                                options=list(TOOL_PRESETS),
+                                translation_key=CONF_TOOLS,
+                                multiple=True,
+                                mode=SelectSelectorMode.LIST,
+                            )
+                        ),
+                        vol.Optional(CONF_NODE_RED_URL): TextSelector(TextSelectorConfig(type=TextSelectorType.URL)),
+                        vol.Optional(CONF_NODE_RED_USERNAME): str,
+                        vol.Optional(CONF_NODE_RED_PASSWORD): TextSelector(
+                            TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                        ),
+                        vol.Required(CONF_CUSTOMIZE, default=False): bool,
+                    }
+                ),
+                user_input or {},
+            ),
+            errors=errors,
+        )
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         """Handle reconfiguration of a subentry."""
@@ -289,6 +346,9 @@ class LumoSubentryFlowHandler(ConfigSubentryFlow):
                 user_input.pop(CONF_LLM_HASS_API, None)
 
             if user_input[CONF_RECOMMENDED]:
+                # Recommended replaces the model settings, not the agent's functions or
+                # history settings, which this step does not show.
+                user_input = {k: options[k] for k in KEPT_WHEN_RECOMMENDED if k in options} | user_input
                 if self._is_new:
                     return self.async_create_entry(title=user_input.pop(CONF_NAME), data=user_input)
                 return self.async_update_and_abort(

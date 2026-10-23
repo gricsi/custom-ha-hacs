@@ -60,6 +60,17 @@ from `GET /models`, labelled with each model's context window.
 | Web search / code interpreter | ❌ | Responses-API-only features, not available |
 | Embeddings, audio | ❌ | No endpoint |
 
+### Adding a conversation agent
+
+Adding an agent asks only for a name and the tools to give it — **Control devices**, **Read Home
+Assistant logs**, **Read Node-RED flows** — plus the Node-RED URL and login if you tick that one.
+Everything else starts on the recommended settings, and the function YAML is generated for you.
+The log and Node-RED tools are read-only and say so to Home Assistant. Tick **Customize everything**
+for the full settings, prefilled; **Reconfigure** always opens them.
+
+Give Lumo its own read-only Node-RED user. The login is stored in the agent's function YAML, in
+Home Assistant's `.storage`, like every other function credential.
+
 ## Conversation history and the chat card
 
 The Assist dialog forgets its messages when you close it, and Home Assistant drops a conversation

@@ -92,4 +92,9 @@ successful reply removes it, and other API errors raise none.
 is ignored), and setup serves the card and adds it to every dashboard. The card's JavaScript itself
 has no tests; `node --check` is the only check it gets.
 
-The config flow itself, the rest of streaming and the remaining executors have no tests yet.
+`test_quick_setup.py` — the short form for a new conversation agent: the generated function YAML,
+the Node-RED URL and login, the read-only annotations, that the presets still match
+`examples/function/*/README.md`, and the flow itself driven on a bare `HomeAssistant`. One test pins
+a fix: reconfiguring an agent on the recommended settings used to drop its function YAML.
+
+The rest of the config flow, the rest of streaming and the remaining executors have no tests yet.

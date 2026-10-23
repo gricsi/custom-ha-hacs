@@ -50,6 +50,24 @@
         "entry_not_loaded": "Cannot add things while the configuration is disabled."
       },
       "step": {
+        "user": {
+          "title": "Add a Lumo conversation agent",
+          "description": "Pick what Lumo may do. Everything else starts on the recommended settings, and you can change any of it later with Reconfigure.",
+          "data": {
+            "name": "Name",
+            "tools": "Tools",
+            "node_red_url": "Node-RED URL",
+            "node_red_username": "Node-RED username",
+            "node_red_password": "Node-RED password",
+            "customize": "Customize everything"
+          },
+          "data_description": {
+            "tools": "Reading the log and the Node-RED flows is read-only. Controlling devices calls Home Assistant actions.",
+            "node_red_url": "Only for Node-RED. The address of the Node-RED editor, e.g. http://192.168.1.10:1880 — the HA host's IP, not a container name.",
+            "node_red_username": "Leave empty if the Node-RED editor has no login. Give Lumo a read-only Node-RED user.",
+            "customize": "Continue to the full settings — prompt, model, functions — prefilled from this form."
+          }
+        },
         "init": {
           "data": {
             "name": "Name",
@@ -97,6 +115,9 @@
             "remember_history": "Keep each user's last turns in .storage so a new Assist conversation continues where the last one ended. Users without a login (voice satellites) are never remembered."
           }
         }
+      },
+      "error": {
+        "node_red_url_required": "Enter the Node-RED URL, or untick Read Node-RED flows."
       }
     },
     "ai_task_data": {
@@ -139,6 +160,13 @@
         "medium": "Medium",
         "high": "High",
         "max": "Maximum"
+      }
+    },
+    "tools": {
+      "options": {
+        "execute_services": "Control devices",
+        "read_logs": "Read Home Assistant logs",
+        "node_red_flows": "Read Node-RED flows"
       }
     }
   },

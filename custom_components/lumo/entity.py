@@ -455,7 +455,6 @@ class LumoBaseLLMEntity(Entity):
             entry_type=dr.DeviceEntryType.SERVICE,
         )
         self._cached_formatted_tools: list[ChatCompletionFunctionToolParam] | None = None
-        self._cached_tools_hash: int | None = None
 
     def _lumo_error(self, err: openai.OpenAIError) -> HomeAssistantError:
         """Log a failed request, raise the repair issue it calls for, and say what went wrong."""
@@ -509,14 +508,11 @@ class LumoBaseLLMEntity(Entity):
         perf.checkpoint("Build model args")
 
         if chat_log.llm_api:
-            current_tools_hash = hash(tuple((tool.name, type(tool).__name__) for tool in chat_log.llm_api.tools))
-
-            if self._cached_formatted_tools is None or self._cached_tools_hash != current_tools_hash:
-                self._cached_formatted_tools = [
-                    _format_tool(tool, chat_log.llm_api.custom_serializer) for tool in chat_log.llm_api.tools
-                ]
-                self._cached_tools_hash = current_tools_hash
-                LOGGER.debug("Formatted and cached %s tools", len(self._cached_formatted_tools))
+            # Schemas and serializers can change without a tool being renamed.
+            # Formatting is cheap compared with the request and avoids stale schemas.
+            self._cached_formatted_tools = [
+                _format_tool(tool, chat_log.llm_api.custom_serializer) for tool in chat_log.llm_api.tools
+            ]
 
             if self._cached_formatted_tools:
                 model_args["tools"] = self._cached_formatted_tools

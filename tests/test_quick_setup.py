@@ -265,12 +265,15 @@ def test_without_device_control_only_read_only_tools_remain() -> None:
     class LiveContext(llm.Tool):
         name = "homeassistant__GetLiveContext"
         description = "Read states"
+        if hasattr(llm, "ToolAnnotations"):
+            annotations = llm.ToolAnnotations(read_only=True)
 
     read_logs = CustomFunctionTool(TOOL_PRESETS["read_logs"]["spec"], TOOL_PRESETS["read_logs"]["function"])
     execute = CustomFunctionTool(DEFAULT_CONF_FUNCTIONS[0]["spec"], DEFAULT_CONF_FUNCTIONS[0]["function"])
     undeclared = CustomFunctionTool({"name": "mystery"}, {"type": "script"})
 
-    kept = without_control_tools([turn_on, script, LiveContext(), read_logs, execute, undeclared])
+    management_write = SimpleNamespace(name="reload_entry", annotations=SimpleNamespace(read_only=False))
+    kept = without_control_tools([turn_on, script, LiveContext(), read_logs, execute, undeclared, management_write])
     assert [tool.name for tool in kept] == ["homeassistant__GetLiveContext", "read_logs"]
 
 

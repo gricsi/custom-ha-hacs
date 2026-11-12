@@ -23,8 +23,9 @@ class LumoChatCard extends HTMLElement {
   }
 
   set hass(hass) {
+    const reconnected = this._hass?.connection !== hass.connection;
     this._hass = hass;
-    if (!this._loaded) {
+    if (!this._loaded || (reconnected && this._historyFailed && !this._busy)) {
       this._loaded = true;
       this._loadHistory();
     }
@@ -48,11 +49,14 @@ class LumoChatCard extends HTMLElement {
       });
       this._agentId = this._agentId ?? agent_id;
       this._messages = messages;
+      this._historyFailed = false;
     } catch (err) {
+      this._historyFailed = true;
       this._messages = [{ role: "error", content: `Could not load history: ${err.message || err}` }];
     }
     this._fetched = true;
     this._renderMessages();
+    this._scrollToEnd(true);
   }
 
   async _send() {
@@ -120,8 +124,8 @@ class LumoChatCard extends HTMLElement {
         .toolbar { display: flex; align-items: center; height: var(--header-height, 56px); padding: 0 12px; gap: 8px; font-size: 20px;
           background: var(--app-header-background-color); color: var(--app-header-text-color, white); }
         .page { padding: 16px; height: calc(100% - var(--header-height, 56px) - 32px); max-width: 960px; margin: 0 auto; }
-        ha-card { display: flex; flex-direction: column; height: 100%; }
-        .messages { flex: 1; overflow-y: auto; max-height: ${this._full ? "none" : "480px"}; padding: 8px 16px; }
+        ha-card { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+        .messages { flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; scroll-behavior: auto; max-height: ${this._full ? "none" : "480px"}; padding: 8px 16px; }
         .content { display: flex; flex-direction: column; gap: 8px; }
         .message { padding: 8px 12px; border-radius: 12px; max-width: 80%; white-space: pre-wrap; overflow-wrap: anywhere; }
         ha-markdown.message { white-space: normal; }
@@ -130,14 +134,14 @@ class LumoChatCard extends HTMLElement {
         .assistant { align-self: flex-start; background: var(--secondary-background-color); color: var(--primary-text-color); }
         .error { align-self: center; color: var(--error-color); }
         .empty { color: var(--secondary-text-color); align-self: center; }
-        form { display: flex; gap: 8px; padding: 8px 16px 16px; }
+        form { display: flex; flex-shrink: 0; gap: 8px; padding: 8px 16px 16px; }
         input { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font: inherit; }
         button.new { background: none; color: var(--primary-color); padding: 0 8px; }
         button { border: none; border-radius: 8px; padding: 0 16px; background: var(--primary-color); color: var(--text-primary-color); font: inherit; cursor: pointer; }
       </style>
       ${this._full ? `<div class="toolbar"><ha-menu-button></ha-menu-button><span>${title}</span></div><div class="page">` : ""}
       <ha-card ${this._full ? "" : `header="${title}"`}>
-        <div class="messages"><div class="content"></div></div>
+        <div class="messages" tabindex="0"><div class="content"></div></div>
         <form><button type="button" class="new" title="Start a new conversation">New</button><input placeholder="Enter a request" autocomplete="off" /><button type="submit">Send</button></form>
       </ha-card>
       ${this._full ? "</div>" : ""}`;
@@ -154,27 +158,77 @@ class LumoChatCard extends HTMLElement {
     // has scrolled up to read; scrolling back down resumes following.
     const list = this.shadowRoot.querySelector(".messages");
     this._stick = true;
-    list.addEventListener("scroll", () => {
-      this._stick = list.scrollHeight - list.scrollTop - list.clientHeight < 48;
+    list.addEventListener("scroll", () => this._handleScroll());
+    list.addEventListener("wheel", (event) => {
+      if (event.deltaY < 0) this._stick = false;
+    }, { passive: true });
+    list.addEventListener("keydown", (event) => {
+      if (["ArrowUp", "PageUp", "Home"].includes(event.key)) this._stick = false;
     });
-    this._resizeObserver?.disconnect();
-    if (window.ResizeObserver) {
-      this._resizeObserver = new ResizeObserver(() => this._scrollToEnd());
-      this._resizeObserver.observe(list);
-      this._resizeObserver.observe(list.querySelector(".content"));
-    }
+    this._observeMessages();
     this._renderMessages();
   }
 
   connectedCallback() {
-    this._scrollToEnd();
+    this._observeMessages();
+    this._scrollToEnd(true);
+  }
+
+  disconnectedCallback() {
+    this._resizeObserver?.disconnect();
+    if (this._scrollFrame != null) window.cancelAnimationFrame(this._scrollFrame);
+    this._scrollFrame = null;
+  }
+
+  _observeMessages() {
+    this._resizeObserver?.disconnect();
+    const list = this.shadowRoot?.querySelector(".messages");
+    if (window.ResizeObserver && list) {
+      this._listVisible = list.clientHeight > 0;
+      this._resizeObserver = new ResizeObserver(() => {
+        const visible = list.clientHeight > 0;
+        const reopened = visible && !this._listVisible;
+        this._listVisible = visible;
+        this._scrollToEnd(reopened);
+      });
+      this._resizeObserver.observe(list);
+      this._resizeObserver.observe(list.querySelector(".content"));
+    }
   }
 
   _scrollToEnd(force = false) {
+    if (force) this._stick = true;
+    this._applyScrollToEnd();
+    // Opening a panel and rendering markdown can change its layout after this
+    // call. Retry after layout, while still allowing an upward user scroll.
+    if (this._stick && this._scrollFrame == null && window.requestAnimationFrame) {
+      this._scrollFrame = window.requestAnimationFrame(() => {
+        this._scrollFrame = null;
+        this._applyScrollToEnd();
+      });
+    }
+  }
+
+  _applyScrollToEnd() {
     const list = this.shadowRoot?.querySelector(".messages");
     if (!list) return;
-    if (force) this._stick = true;
-    if (this._stick) list.scrollTop = list.scrollHeight;
+    if (this._stick) {
+      list.scrollTop = list.scrollHeight;
+      this._lastScrollTop = list.scrollTop;
+    }
+  }
+
+  _handleScroll() {
+    const list = this.shadowRoot?.querySelector(".messages");
+    if (!list) return;
+    if (list.scrollHeight - list.scrollTop - list.clientHeight < 48) {
+      this._stick = true;
+    } else if (list.scrollTop < (this._lastScrollTop ?? list.scrollTop)) {
+      this._stick = false;
+    }
+    // Content growth can move the bottom without the user scrolling up. A
+    // queued scroll event from our last adjustment must not disable following.
+    this._lastScrollTop = list.scrollTop;
   }
 
   // Adds and removes bubbles rather than rebuilding the list: a rebuild re-renders every

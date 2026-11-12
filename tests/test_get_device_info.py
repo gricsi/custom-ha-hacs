@@ -39,12 +39,12 @@ def device_info(targets: list[str]) -> dict[str, Any]:
         hass = HomeAssistant(tempfile.mkdtemp())
         loader.async_setup(hass)
         try:
+            hass.config_entries = config_entries.ConfigEntries(hass, {})
+            await hass.config_entries.async_initialize()
             for registry in (ar, dr, er):
                 if hasattr(registry, "async_setup"):
                     registry.async_setup(hass)
                 await registry.async_load(hass)
-            hass.config_entries = config_entries.ConfigEntries(hass, {})
-            await hass.config_entries.async_initialize()
             entry = config_entries.ConfigEntry(
                 domain="shelly",
                 title="Boiler Relay",

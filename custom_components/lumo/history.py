@@ -15,7 +15,9 @@ ever written.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timedelta
+from inspect import signature
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +25,8 @@ import voluptuous as vol
 
 from homeassistant.components import conversation, frontend, panel_custom, websocket_api
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import Context, Event, HomeAssistant, callback
+from homeassistant.exceptions import Unauthorized
 from homeassistant.helpers import chat_session
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
@@ -41,6 +44,23 @@ CARD_URL = f"/{DOMAIN}/lumo-chat-card.js"
 CARD_PATH = Path(__file__).parent / "frontend" / "lumo-chat-card.js"
 PANEL_URL_PATH = DOMAIN
 SIDEBAR_VISIBILITIES = ("hidden", "admin", "everyone")
+_SESSION_SUPPORTS_CONTEXT = "context" in signature(chat_session.async_get_chat_session).parameters
+
+
+@contextmanager
+def _owned_chat_session(hass: HomeAssistant, conversation_id: str | None, context: Context):
+    """Use core ownership when available and protect older websocket sessions too."""
+    options = {"context": context} if _SESSION_SUPPORTS_CONTEXT else {}
+    with chat_session.async_get_chat_session(hass, conversation_id, **options) as session:
+        if not _SESSION_SUPPORTS_CONTEXT:
+            owners = hass.data.setdefault(f"{DOMAIN}_session_owners", {})
+            if session.conversation_id in owners and owners[session.conversation_id] != context.user_id:
+                raise Unauthorized(context=context)
+            if session.conversation_id not in owners:
+                owners[session.conversation_id] = context.user_id
+                session.async_on_cleanup(lambda: owners.pop(session.conversation_id, None))
+        yield session
+
 
 # {agent_id: {user_id: {"updated": iso timestamp, "turns": [{"role", "content"}]}}}
 HistoryData = dict[str, dict[str, dict[str, Any]]]
@@ -78,9 +98,11 @@ class ConversationHistory:
         if not user_id or any(c.role == "assistant" for c in chat_log.content):
             return
         chat_log.content[1:1] = [
-            conversation.UserContent(content=turn["content"])
-            if turn["role"] == "user"
-            else conversation.AssistantContent(agent_id=agent_id, content=turn["content"])
+            (
+                conversation.UserContent(content=turn["content"])
+                if turn["role"] == "user"
+                else conversation.AssistantContent(agent_id=agent_id, content=turn["content"])
+            )
             for turn in await self._async_turns(user_id, agent_id)
         ]
 
@@ -201,7 +223,7 @@ async def websocket_chat(hass: HomeAssistant, connection: websocket_api.ActiveCo
     that same log. Sent as {"delta": text} events, then {"done": result}, then the result
     that ends the subscription. The turn runs as the connection's user.
     """
-    # Lets the card's unsubscribe after "done" succeed; there is nothing left to cancel.
+    # Track the subscription while the turn runs; cleanup also covers failed turns.
     connection.subscriptions[msg["id"]] = lambda: None
 
     @callback
@@ -209,24 +231,23 @@ async def websocket_chat(hass: HomeAssistant, connection: websocket_api.ActiveCo
         if content := delta.get("content"):
             connection.send_message(websocket_api.event_message(msg["id"], {"delta": content}))
 
-    with (
-        chat_session.async_get_chat_session(hass, msg.get("conversation_id")) as session,
-        conversation.async_get_chat_log(hass, session, chat_log_delta_listener=forward),
-    ):
-        agent_id = msg.get("agent_id")
-        if agent_id is None:
-            agent_id, _ = await async_get_history(hass).async_get_messages(connection.user.id, None)
-            agent_id = agent_id or _first_lumo_agent(hass)
-        result = await conversation.async_converse(
-            hass,
-            msg["text"],
-            session.conversation_id,
-            connection.context(msg),
-            msg.get("language"),
-            agent_id,
-        )
-    connection.send_message(websocket_api.event_message(msg["id"], {"done": result.as_dict()}))
-    connection.send_result(msg["id"])
+    context = connection.context(msg)
+    try:
+        with (
+            _owned_chat_session(hass, msg.get("conversation_id"), context) as session,
+            conversation.async_get_chat_log(hass, session, chat_log_delta_listener=forward),
+        ):
+            agent_id = msg.get("agent_id")
+            if agent_id is None:
+                agent_id, _ = await async_get_history(hass).async_get_messages(connection.user.id, None)
+                agent_id = agent_id or _first_lumo_agent(hass)
+            result = await conversation.async_converse(
+                hass, msg["text"], session.conversation_id, context, msg.get("language"), agent_id
+            )
+        connection.send_message(websocket_api.event_message(msg["id"], {"done": result.as_dict()}))
+        connection.send_result(msg["id"])
+    finally:
+        connection.subscriptions.pop(msg["id"], None)
 
 
 async def async_register_card(hass: HomeAssistant) -> None:

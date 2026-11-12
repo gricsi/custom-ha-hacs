@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+from inspect import signature
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -25,6 +26,11 @@ async def load_registries(hass: HomeAssistant) -> None:
     from homeassistant.helpers import device_registry as dr, entity_registry as er
 
     # Whether a registry needs async_setup before async_load differs between cores.
+    from homeassistant.config_entries import ConfigEntries
+
+    if hass.config_entries is None:
+        hass.config_entries = ConfigEntries(hass, {})
+        await hass.config_entries.async_initialize()
     for registry_module in (dr, er):
         if hasattr(registry_module, "async_setup"):
             registry_module.async_setup(hass)
@@ -193,7 +199,15 @@ def test_chat_streams_the_reply_then_reports_the_result(monkeypatch) -> None:
             agent_id=agent_id,
         )
         with (
-            chat_session.async_get_chat_session(hass, conversation_id) as session,
+            chat_session.async_get_chat_session(
+                hass,
+                conversation_id,
+                **(
+                    {"context": context}
+                    if "context" in signature(chat_session.async_get_chat_session).parameters
+                    else {}
+                ),
+            ) as session,
             conversation.async_get_chat_log(hass, session, user_input) as chat_log,
         ):
 

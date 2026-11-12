@@ -1,6 +1,7 @@
 """Conversation support for Lumo."""
 
 from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import fields as dataclass_fields
 from typing import Any, Literal
 
@@ -112,9 +113,13 @@ def without_control_tools(tools: list[llm.Tool]) -> list[llm.Tool]:
         tool
         for tool in tools
         if not isinstance(tool, (llm.IntentTool, llm.ActionTool))
+        and (not hasattr(tool, "annotations") or getattr(tool.annotations, "read_only", False) is True)
         and not (
             isinstance(tool, CustomFunctionTool)
-            and (tool.function_spec.get("annotations") or {}).get("read_only") is not True
+            and (
+                not isinstance(tool.function_spec.get("annotations"), dict)
+                or tool.function_spec["annotations"].get("read_only") is not True
+            )
         )
     ]
 
@@ -291,7 +296,9 @@ class LumoEntity(
             self._attr_supported_features = conversation.ConversationEntityFeature.CONTROL
         self._cached_tools: list[CustomFunctionTool] | None = None
         self._cached_yaml_hash: int | None = None
-        self._current_user_input: conversation.ConversationInput | None = None
+        self._current_user_input: ContextVar[conversation.ConversationInput | None] = ContextVar(
+            "lumo_user_input", default=None
+        )
 
     def _get_custom_functions_as_tools(self) -> list[CustomFunctionTool]:
         """Get custom functions from configuration as Tools."""
@@ -318,7 +325,7 @@ class LumoEntity(
                     CustomFunctionTool(
                         function_spec=function["spec"],
                         function_impl=function["function"],
-                        get_user_input=lambda: self._current_user_input,
+                        get_user_input=self._current_user_input.get,
                     )
                 )
 
@@ -356,6 +363,18 @@ class LumoEntity(
         user_input: conversation.ConversationInput,
         chat_log: conversation.ChatLog,
     ) -> conversation.ConversationResult:
+        """Keep the caller local to this turn, including tasks spawned for tools."""
+        token = self._current_user_input.set(user_input)
+        try:
+            return await self._async_handle_turn(user_input, chat_log)
+        finally:
+            self._current_user_input.reset(token)
+
+    async def _async_handle_turn(
+        self,
+        user_input: conversation.ConversationInput,
+        chat_log: conversation.ChatLog,
+    ) -> conversation.ConversationResult:
         """Process the user input and call the API."""
         import time
 
@@ -364,7 +383,6 @@ class LumoEntity(
 
         options = self.subentry.data
         perf_enabled = options.get(CONF_PERFORMANCE_TRACING, False)
-        self._current_user_input = user_input
 
         if perf_enabled:
             start_time = time.time()
@@ -372,13 +390,20 @@ class LumoEntity(
             LOGGER.info("CONVERSATION START")
             LOGGER.info("=" * 80)
 
-        # Force usage of the FlexAssistAPI
+        # Keep the templated Assist API and honor additional selected APIs,
+        # including HA's administrator-only troubleshooting API on newer cores.
         flex_api_id = f"{LLM_API_FLEX_ASSIST}_{self.entry.entry_id}"
+        configured_apis = options.get(CONF_LLM_HASS_API) or []
+        if isinstance(configured_apis, str):
+            configured_apis = [configured_apis]
+        api_ids = list(
+            dict.fromkeys([flex_api_id, *(api_id for api_id in configured_apis if api_id != llm.LLM_API_ASSIST)])
+        )
 
         try:
             await chat_log.async_provide_llm_data(
                 user_input.as_llm_context(DOMAIN),
-                flex_api_id,
+                api_ids,
                 options.get(CONF_PROMPT),
                 user_input.extra_system_prompt,
             )
@@ -390,8 +415,12 @@ class LumoEntity(
             return err.as_conversation_result()
 
         custom_function_tools = self._cached_tools or self._get_custom_functions_as_tools()
-        if custom_function_tools and chat_log.llm_api:
-            chat_log.llm_api.tools.extend(custom_function_tools)
+        if chat_log.llm_api:
+            # Core can reuse this API instance between turns. Replace our tools
+            # rather than appending them again; keep core's tools intact.
+            chat_log.llm_api.tools[:] = [
+                tool for tool in chat_log.llm_api.tools if not isinstance(tool, CustomFunctionTool)
+            ] + custom_function_tools
         if not options.get(CONF_DEVICE_CONTROL, True) and chat_log.llm_api:
             chat_log.llm_api.tools[:] = without_control_tools(chat_log.llm_api.tools)
             if perf_enabled:

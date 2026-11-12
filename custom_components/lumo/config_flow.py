@@ -168,7 +168,30 @@ class LumoConfigFlow(ConfigFlow, domain=DOMAIN):
 
         # Replace rather than merge: clearing the field is how you move to the
         # anonymous tier, and data_updates would silently keep the old key.
-        return self.async_update_reload_and_abort(entry, data=user_input)
+        return self._async_finish_update(entry, user_input)
+
+    def _async_finish_update(self, entry: ConfigEntry, data: dict[str, Any]) -> ConfigFlowResult:
+        """Let the loaded entry's listener reload once, or reload a failed entry."""
+        if entry.update_listeners:
+            return self.async_update_and_abort(entry, data=data)
+        return self.async_update_reload_and_abort(entry, data=data)
+
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
+        """Repair a credential without deleting agents or their options."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        entry = self._get_reauth_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = await self._async_probe(user_input)
+            if not errors:
+                return self._async_finish_update(entry, {**entry.data, **user_input})
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=self.add_suggested_values_to_schema(STEP_USER_DATA_SCHEMA, user_input or entry.data),
+            errors=errors,
+        )
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the initial step."""

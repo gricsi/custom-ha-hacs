@@ -106,10 +106,10 @@ def test_long_result_is_clipped_and_flagged():
     assert "[... 500 more characters]" in result["result"]
 
 
-def test_dispatched_by_name():
+def test_dispatched_by_name(administrator):
     async def body(hass: HomeAssistant) -> dict[str, Any]:
         return await NativeFunctionExecutor().execute(
-            hass, {"name": "render_template"}, {"template": "{{ 1 + 1 }}"}, None, []
+            hass, {"name": "render_template"}, {"template": "{{ 1 + 1 }}"}, administrator(hass), []
         )
 
     assert run(body)["result"] == "2"

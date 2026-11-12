@@ -22,6 +22,14 @@ from custom_components.lumo.conversation import CustomFunctionTool, as_tool_resu
 from custom_components.lumo.entity import tool_result_data
 
 
+@pytest.mark.skipif(not hasattr(llm, "ToolResult"), reason="ToolResult is not available on this HA version")
+def test_wraps_and_reads_the_real_core_tool_result():
+    result = as_tool_result({"state": "on"})
+    assert isinstance(result, llm.ToolResult)
+    assert result.error is False
+    assert tool_result_data(SimpleNamespace(result=result)) == {"state": "on"}
+
+
 @dataclass
 class StubToolResult:
     data: Any

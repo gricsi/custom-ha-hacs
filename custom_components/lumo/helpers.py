@@ -34,11 +34,12 @@ from homeassistant.const import (
     CONF_VERIFY_SSL,
     SERVICE_RELOAD,
 )
-from homeassistant.core import HomeAssistant, State
-from homeassistant.exceptions import HomeAssistantError, ServiceNotFound, TemplateError
+from homeassistant.core import HomeAssistant, ServiceCall, State
+from homeassistant.exceptions import HomeAssistantError, ServiceNotFound, TemplateError, Unauthorized
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.json import json_dumps
 from homeassistant.helpers.script import Script
+from homeassistant.helpers.service import async_extract_entity_ids
 from homeassistant.helpers.template import Template
 from homeassistant.util.json import json_loads
 
@@ -295,6 +296,14 @@ class NativeFunctionExecutor(FunctionExecutor):
         exposed_entities,
     ):
         name = function["name"]
+        if name in {"read_config", "read_logs", "render_template", "get_traces", "add_automation"}:
+            # These tools inspect or change the installation beyond exposed entities.
+            # Read-only metadata describes side effects, not permission to read logs.
+            context = getattr(user_input, "context", None)
+            user_id = getattr(context, "user_id", None)
+            user = await hass.auth.async_get_user(user_id) if user_id else None
+            if user is None or not user.is_admin:
+                raise Unauthorized(context=context)
         if name == "execute_service":
             return await self.execute_service(hass, function, arguments, user_input, exposed_entities)
         if name == "execute_service_single":
@@ -330,26 +339,36 @@ class NativeFunctionExecutor(FunctionExecutor):
     ):
         domain = service_argument["domain"]
         service = service_argument["service"]
-        service_data = service_argument.get("service_data", service_argument.get("data", {}))
+        service_data = dict(service_argument.get("service_data", service_argument.get("data", {})))
         entity_id = service_data.get("entity_id", service_argument.get("entity_id"))
-        area_id = service_data.get("area_id")
-        device_id = service_data.get("device_id")
 
         if isinstance(entity_id, str):
             entity_id = [e.strip() for e in entity_id.split(",")]
         service_data["entity_id"] = entity_id
 
-        if entity_id is None and area_id is None and device_id is None:
+        if not any(service_data.get(key) for key in ("entity_id", "area_id", "device_id", "floor_id", "label_id")):
             raise CallServiceError(domain, service, service_data)
         if not hass.services.has_service(domain, service):
             raise ServiceNotFound(domain, service)
-        self.validate_entity_ids(hass, entity_id or [], exposed_entities)
+        context = user_input.context
+        selected = await async_extract_entity_ids(ServiceCall(hass, domain, service, service_data, context=context))
+        # Area/device selectors can also select other domains. Materialize the
+        # effective entities so no unvalidated selector reaches the service.
+        entity_ids = sorted(e for e in selected if domain == "homeassistant" or e.split(".", 1)[0] == domain)
+        if not entity_ids:
+            raise CallServiceError(domain, service, service_data)
+        self.validate_entity_ids(hass, entity_ids, exposed_entities)
+        for key in ("area_id", "device_id", "floor_id", "label_id"):
+            service_data.pop(key, None)
+        service_data["entity_id"] = entity_ids
 
         try:
             await hass.services.async_call(
                 domain=domain,
                 service=service,
                 service_data=service_data,
+                context=context,
+                blocking=True,
             )
             return {"success": True}
         except HomeAssistantError as e:

@@ -37,10 +37,27 @@
           "skip_authentication": "Skip the reachability and API-key check when saving. Useful if the endpoint is temporarily unreachable.",
           "sidebar": "A full-page Lumo chat with your saved conversation. Hidden, for admins only, or for every user."
         }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect to Lumo",
+        "description": "Lumo rejected the saved API key. Enter a valid key, or clear it to use the anonymous tier. Your agents, prompts and functions are preserved.",
+        "data": {
+          "api_key": "[%key:common::config_flow::data::api_key%]",
+          "base_url": "Base URL",
+          "skip_authentication": "Skip API authentication",
+          "sidebar": "Show Lumo in the sidebar"
+        },
+        "data_description": {
+          "api_key": "Your Lumo API key from the Manage keys page at lumo.proton.me. Prefilled with the key in use. Clear it to switch to the anonymous tier, which has a lower quota.",
+          "base_url": "The Lumo API endpoint. Change this only if Proton moves the path, or to point the integration at another OpenAI-compatible server.",
+          "skip_authentication": "Skip the reachability and API-key check when saving. Useful if the endpoint is temporarily unreachable.",
+          "sidebar": "A full-page Lumo chat with your saved conversation. Hidden, for admins only, or for every user."
+        }
       }
     },
     "abort": {
-      "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
+      "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]",
+      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
     }
   },
   "config_subentries": {
@@ -67,9 +84,9 @@
           },
           "data_description": {
             "tools": "Reading the log, device details and the Node-RED flows is read-only. Controlling devices calls Home Assistant actions.",
-            "node_red_url": "Only for Node-RED. The address of the Node-RED editor, e.g. http://192.168.1.10:1880 — the HA host's IP, not a container name.",
+            "node_red_url": "Only for Node-RED. The address of the Node-RED editor, e.g. http://192.168.1.10:1880 \u2014 the HA host's IP, not a container name.",
             "node_red_username": "Leave empty if the Node-RED editor has no login. Give Lumo a read-only Node-RED user.",
-            "customize": "Continue to the full settings — prompt, model, functions — prefilled from this form."
+            "customize": "Continue to the full settings \u2014 prompt, model, functions \u2014 prefilled from this form."
           }
         },
         "init": {
@@ -118,7 +135,7 @@
             "context_threshold": "Maximum number of tokens to keep in the conversation history before shortening it.",
             "context_truncate_strategy": "Method used to shorten conversation history when it exceeds the threshold.",
             "remember_history": "Keep each user's last turns in .storage so a new Assist conversation continues where the last one ended. Users without a login (voice satellites) are never remembered.",
-            "device_control": "Off: Lumo can only use tools that read — no Assist device control, no scripts, and only custom functions that declare read_only: true."
+            "device_control": "Off: Lumo can only use tools that read \u2014 no Assist device control, no scripts, and only custom functions that declare read_only: true."
           }
         }
       },
@@ -222,11 +239,11 @@
   "issues": {
     "invalid_api_key": {
       "title": "Lumo rejected the API key for {title}",
-      "description": "Lumo answered with \"invalid or expired API key\", so every request through {title} fails. Create a new key on the Manage keys page at lumo.proton.me, then go to Settings → Devices & services → Lumo → the three-dot menu on {title} → Reconfigure. Clear the key there to use the anonymous tier instead. This goes away after the next successful reply."
+      "description": "Lumo answered with \"invalid or expired API key\", so every request through {title} fails. Create a new key on the Manage keys page at lumo.proton.me, then go to Settings \u2192 Devices & services \u2192 Lumo \u2192 the three-dot menu on {title} \u2192 Reconfigure. Clear the key there to use the anonymous tier instead. This goes away after the next successful reply."
     },
     "quota_exhausted": {
       "title": "Lumo quota used up for {title}",
-      "description": "Lumo is refusing requests through {title} because the request quota for the current window is spent. It comes back on its own when the window resets; on the anonymous tier, adding an API key under Reconfigure raises the limit. The Lumo … requests remaining sensors show what is left. This goes away after the next successful reply."
+      "description": "Lumo is refusing requests through {title} because the request quota for the current window is spent. It comes back on its own when the window resets; on the anonymous tier, adding an API key under Reconfigure raises the limit. The Lumo \u2026 requests remaining sensors show what is left. This goes away after the next successful reply."
     }
   }
 }

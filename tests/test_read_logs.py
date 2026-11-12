@@ -506,10 +506,10 @@ def test_undecodable_bytes_do_not_fail_the_call(tmp_path):
 # -------------------------------------------------------------------------- wiring
 
 
-def test_execute_dispatches_the_function_name():
+def test_execute_dispatches_the_function_name(administrator):
     hass = FakeHass({"system_log": fake_store([record()])})
 
-    result = asyncio.run(NativeFunctionExecutor().execute(hass, {"name": "read_logs"}, {}, None, []))
+    result = asyncio.run(NativeFunctionExecutor().execute(hass, {"name": "read_logs"}, {}, administrator(hass), []))
 
     assert result["source"] == "errors"
 

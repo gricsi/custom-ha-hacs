@@ -3,8 +3,11 @@
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install "homeassistant>=2026.8.0" pytest
-python scripts/collect_test_requirements.py > /tmp/reqs.txt && pip install -r /tmp/reqs.txt
+python scripts/collect_test_requirements.py > /tmp/reqs.txt
+HA_CONSTRAINTS=$(python -c "import pathlib, homeassistant; print(pathlib.Path(homeassistant.__file__).parent / 'package_constraints.txt')")
+pip install -r /tmp/reqs.txt -c "$HA_CONSTRAINTS"
 pytest -q
+node --test tests/frontend/*.test.cjs
 ```
 
 The version floors are not cosmetic: `api.py` imports `homeassistant.components.llm`, which first
@@ -25,6 +28,24 @@ Either way: no config entry, no async plugin — `asyncio.run()` is enough.
 
 ## What is covered
 
+CI tests HA 2026.8.0, the latest patch releases in 2026.10 and 2026.11, and current stable.
+It runs weekly as well as on pushes and pull requests. Component dependencies are installed
+under each core's own package constraints. Version-specific tests skip only when the actual
+core API they exercise does not exist.
+
+`test_conversation_isolation.py` covers repeated tool attachment to a cached API, selected
+native APIs, concurrent caller contexts, and cleanup after failures. `test_chat_ownership.py`
+checks session ownership and subscription cleanup on all supported versions.
+`test_entry_lifecycle.py` drives credential updates through real config entry listeners,
+checking a single reload and preservation of subentries, and tests startup auth/retry errors.
+`test_tool_permissions.py` checks administrator-only diagnostics and resolves real registry
+entity/area/device targets before exposure validation, preserving the caller's context.
+
+`frontend/chat-card.test.cjs` runs with Node 22+ and no dependencies. It executes the card
+in a small DOM harness to check streaming, failed requests, starting over, scroll following,
+history retries on replacement connections, observer cleanup, and duplicate module loading.
+It does not replace a visual smoke test against a running Home Assistant frontend.
+
 `test_read_logs.py` — the `read_logs` native function. Both sources (`errors`, `raw`), the filters
 and limits, the character budgets, and the failure modes (no `system_log`, no log file, undecodable
 bytes).
@@ -40,11 +61,11 @@ puts on each tool. The parsing of a spec's `annotations:` block, including the r
 unknown key, a non-boolean value and a non-mapping block all fall back to Home Assistant's
 pessimistic defaults and log rather than raising.
 
-Two tests there skip on the version this suite installs, and that is the point. `annotations`
+Two tests there skip on older Home Assistant versions. `annotations`
 needs `llm.ToolAnnotations`, which arrived after 2026.9, so the rest of the file stubs it — and
 a stub cannot notice core renaming a field or changing a default. `test_declared_annotation_keys_exist_on_the_real_core`
 and `test_stub_still_matches_the_real_defaults` check the genuine class when there is one. They
-are inert today and start running the moment Home Assistant is upgraded past 2026.9.
+run in the newer CI lanes and skip on cores through 2026.9.
 
 There is deliberately no way to run those two early. Injecting a stand-in `ToolAnnotations` to
 un-skip them would have them check a stub against a stub, which passes whatever core does — the
@@ -70,8 +91,8 @@ leaving a live one alone, per-user isolation, text-only and capped storage, surv
 agent's restore-then-save wiring, and that nothing but its own storage file is ever written (a
 `configuration.yaml` and a Node-RED `flows.json` are checked byte for byte).
 
-`test_tool_result.py` — the 2026.10 `ToolResult` migration in both directions, stubbed because the
-suite pins 2026.9.
+`test_tool_result.py` — the 2026.10 `ToolResult` migration in both directions, with stubs for
+cross-version branch coverage and a real-core result check on newer versions.
 
 `test_context_threshold.py` — the context threshold option: what is dropped, what is always kept
 (system prompt, the current turn with its tool calls), and that the option reaches the request.
@@ -91,8 +112,7 @@ successful reply removes it, and other API errors raise none.
 `test_chat_card.py` — `lumo/history` returns the caller's turns only (a `user_id` in the message
 is ignored), and setup serves the card and adds it to every dashboard. It also covers `lumo/chat`
 (the reply streamed as events, then the result, through a real chat log) and `lumo/history/clear`
-(only the caller's history with that one agent). The card's JavaScript has no tests in this suite; it
-was smoke-tested once in jsdom against a fake `hass`, outside the repo.
+(only the caller's history with that one agent). The card's JavaScript checks run separately with Node.
 
 `test_quick_setup.py` — the short form for a new conversation agent: the generated function YAML,
 the Node-RED URL and login, the read-only annotations, that the presets still match

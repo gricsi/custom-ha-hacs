@@ -286,13 +286,13 @@ def test_unknown_run_id_is_reported_not_raised():
     assert "no run 'nope'" in result["error"]
 
 
-def test_dispatched_by_name():
+def test_dispatched_by_name(administrator):
     async def main() -> dict[str, Any]:
         hass = HomeAssistant(tempfile.mkdtemp())
         try:
             hass.data["trace"] = store_of(automation_trace())
             hass.data["trace_traces_restored"] = True
-            return await NativeFunctionExecutor().execute(hass, {"name": "get_traces"}, {}, None, [])
+            return await NativeFunctionExecutor().execute(hass, {"name": "get_traces"}, {}, administrator(hass), [])
         finally:
             await hass.async_stop(force=True)
 

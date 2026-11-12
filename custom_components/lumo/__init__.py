@@ -9,7 +9,7 @@ from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_API_KEY, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.httpx_client import get_async_client
@@ -114,17 +114,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: LumoConfigEntry) -> bool
         try:
             authenticated = await async_validate_connection(client, bool(api_key))
         except openai.AuthenticationError as err:
-            LOGGER.error("Lumo rejected the API key: %s", err)
-            return False
+            raise ConfigEntryAuthFailed("Lumo rejected the API key") from err
         except openai.OpenAIError as err:
             raise ConfigEntryNotReady(err) from err
 
         if api_key and not authenticated:
-            LOGGER.warning(
-                "Lumo did not recognise the configured API key and served the request "
-                "anonymously. The integration will work but is capped at the anonymous "
-                "quota (~20 requests per window). Check the key on the Manage keys page."
-            )
+            raise ConfigEntryAuthFailed("Lumo did not recognise the API key and served the request anonymously")
 
     entry.runtime_data = client
 

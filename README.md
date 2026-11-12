@@ -13,6 +13,14 @@ Licensed MIT; see [NOTICE.md](NOTICE.md) for what is inherited from upstream and
 
 ## Install
 
+Requires **Home Assistant 2026.8.0+** and its supported Python runtime (**3.14.2+**).
+
+On **Home Assistant 2026.11+**, open **Settings → Marketplace**, add this repository as a
+custom integration repository, install **Lumo**, and restart Home Assistant. Then open
+*Settings → Devices & Services → Add Integration → Lumo*.
+
+On older supported versions, use HACS:
+
 **HACS** → three-dot menu → *Custom repositories* → add this repo as category **Integration** →
 install **Lumo** → restart Home Assistant → *Settings → Devices & Services → Add Integration → Lumo*.
 
@@ -32,6 +40,10 @@ All three stay editable afterwards: *Settings → Devices & Services → Lumo �
 entry *→ Reconfigure*. The key field is prefilled with the key in use, so clearing it is an explicit
 move to the anonymous tier. Your conversation and AI task services keep their prompts and functions —
 rotating a key does not mean deleting the integration.
+
+If a saved key is rejected during startup, Home Assistant offers a reauthentication flow.
+An unrecognized key that is silently served anonymously also requires reauthentication;
+clear the key explicitly to choose the anonymous tier.
 
 **`GET /models` does not authenticate.** It answers 200 for a valid key, a revoked key, and no key
 alike, so listing models proves reachability and nothing about your credential. Setup therefore
@@ -73,6 +85,18 @@ for the full settings, prefilled; **Reconfigure** always opens them.
 
 Give Lumo its own read-only Node-RED user. The login is stored in the agent's function YAML, in
 Home Assistant's `.storage`, like every other function credential.
+
+Installation-wide native tools (**Read Home Assistant logs**, `read_config`, `render_template`,
+`get_traces`, and `add_automation`) require a signed-in administrator. Ordinary users and
+voice satellites without a user cannot run them. This permission is separate from a tool's
+read-only annotation. Device control validates resolved entity, area, and device targets
+against Assist exposure and records the caller's context.
+
+On HA 2026.11+, the full agent settings also let you select Home Assistant's native
+troubleshooting API under the Home Assistant API selector. Additional selected APIs run
+alongside Lumo's templated Assist API; Home Assistant enforces their administrator requirements.
+With **Control devices** off, tools declaring write access are withheld. The custom tools
+remain useful for raw log tails, detailed traces, and Node-RED flow inspection.
 
 ## Conversation history and the chat card
 
@@ -122,8 +146,8 @@ URL would 404 every single request. The whole entity layer was ported to `chat/c
   entirely, so with a valid key this logging stays quiet.
 - Removed — Azure support, DALL-E `generate_image`, `query_image`, web search, code interpreter, and
   the `o*`/`gpt-5`-specific option branching. All of it targets endpoints Lumo does not serve.
-- `manifest.json` — `openai` pinned to `==2.45.0`, matching Home Assistant core's own pin, instead of
-  OmniConv's `>=2.2.0` range.
+- `manifest.json` — `openai>=2.45.0,<4`, allowing supported Home Assistant releases to apply
+  their own SDK constraints. Tests install component requirements under the installed core's constraints.
 - Defaults — `lumo-max`, temperature `0.3` (the documented API default; deterministic suits device
   control), and `max_tokens` raised from OmniConv's 150, which truncates anything longer than one
   sentence. Setup's credential probe still uses `lumo-lite`, since checking a key should not spend
@@ -161,12 +185,18 @@ agent into a dashboard designer, a log triage assistant, or a terse everyday ass
 
 ```bash
 pip install "homeassistant>=2026.8.0" pytest
-python scripts/collect_test_requirements.py > /tmp/reqs.txt && pip install -r /tmp/reqs.txt
+python scripts/collect_test_requirements.py > /tmp/reqs.txt
+HA_CONSTRAINTS=$(python -c "import pathlib, homeassistant; print(pathlib.Path(homeassistant.__file__).parent / 'package_constraints.txt')")
+pip install -r /tmp/reqs.txt -c "$HA_CONSTRAINTS"
 pytest -q
+node --test tests/frontend/*.test.cjs
 ```
 
 Run against real Home Assistant, no async plugin, no config entry — see [tests/](tests/) for why the
 second install step is needed and what is covered.
+
+CI checks the minimum HA 2026.8.0, the latest 2026.10 and 2026.11 patches, and the latest
+stable core. It runs on changes and weekly. The frontend checks use Node 22+ and no extra packages.
 
 ## Install via HACS
 

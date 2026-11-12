@@ -4,22 +4,29 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * 1"
 
 jobs:
   pytest:
     runs-on: "ubuntu-latest"
+    strategy:
+      fail-fast: false
+      matrix:
+        homeassistant:
+          - "==2026.8.0"
+          - "~=2026.10.0"
+          - "~=2026.11.0"
+          - ">=2026.11.1"
+    env:
+      HA_REQUIREMENT: ${{ matrix.homeassistant }}
     steps:
       - uses: "actions/checkout@v4"
       - uses: "actions/setup-python@v5"
         with:
           python-version: "3.14"
       - name: Install Home Assistant and pytest
-        # Both pins are load-bearing. api.py imports homeassistant.components.llm,
-        # which first shipped in 2026.8.0, and every core since 2026.3 requires
-        # Python >=3.14.2 -- so on a 3.13 runner pip caps out at homeassistant 2026.2.3
-        # and the suite dies at collection with ModuleNotFoundError. The version floor
-        # turns that silent downgrade into a resolution error that names the cause.
-        run: pip install "homeassistant>=2026.8.0" pytest
+        run: python -m pip install "homeassistant${HA_REQUIREMENT}" pytest
       - name: Show what resolved
         run: python -c "import homeassistant.const as c, sys; print('HA', c.__version__, '| py', sys.version)"
       - name: Install what the imported components pin
@@ -28,6 +35,12 @@ jobs:
         run: |
           python scripts/collect_test_requirements.py > /tmp/component-requirements.txt
           cat /tmp/component-requirements.txt
-          pip install -r /tmp/component-requirements.txt
+          HA_CONSTRAINTS=$(python -c "import pathlib, homeassistant; print(pathlib.Path(homeassistant.__file__).parent / 'package_constraints.txt')")
+          python -m pip install -r /tmp/component-requirements.txt -c "$HA_CONSTRAINTS"
+      - uses: "actions/setup-node@v4"
+        with:
+          node-version: "22"
+      - name: Run chat card checks
+        run: node --test tests/frontend/*.test.cjs
       - name: Run tests
         run: pytest -q

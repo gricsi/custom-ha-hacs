@@ -109,9 +109,9 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 
 async def async_validate_input(hass: HomeAssistant, api_key: str | None, base_url: str | None) -> bool:
     """Validate the endpoint and key; return True if the key was accepted."""
-    from . import async_validate_connection, create_client
+    from . import async_create_client, async_validate_connection
 
-    client = create_client(hass, api_key, base_url)
+    client = await async_create_client(hass, api_key, base_url)
     return await async_validate_connection(client, bool(api_key))
 
 

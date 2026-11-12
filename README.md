@@ -122,7 +122,10 @@ title: Lumo                   # optional
 ```
 
 The card shows only your own messages. Replies stream in as they are written and are rendered
-as markdown; **New** forgets your history with that agent and starts over. Nothing outside `.storage` is ever written.
+as markdown; **New chat** (**Új beszélgetés** in Hungarian) forgets your history with that agent
+and starts over. The input grows for longer messages: **Enter** sends, **Shift + Enter** adds a
+line. You can draft your next message while Lumo replies. Labels follow Home Assistant's language,
+and colors follow its theme. Nothing outside `.storage` is ever written.
 
 The integration also adds sensors for input/output tokens and, on the anonymous tier, requests
 remaining per model, and raises a repair issue when the key is rejected or the quota is spent.

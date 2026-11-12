@@ -20,13 +20,14 @@ function load() {
   const evaluate = () => vm.runInContext(`{${source}\n}`, context);
   evaluate();
   const card = new (elements.get("lumo-chat-card"))();
-  const input = { value: "hello" };
+  const input = { value: "hello", style: {}, scrollHeight: 38, setAttribute() {}, focus() {} };
+  const send = { setAttribute() {} }, start = {};
   const list = { scrollTop: 0, scrollHeight: 500, querySelector: () => ({}) };
-  card.shadowRoot = { querySelector: (selector) => selector === "input" ? input : selector === ".messages" ? list : null };
+  card.shadowRoot = { querySelector: (selector) => ({ textarea: input, ".messages": list, "button.send": send, "button.new": start })[selector] ?? null };
   card._messages = [];
   card._renderMessages = () => {};
   card._updateLastBubble = () => {};
-  return { card, context, input, list, evaluate };
+  return { card, context, input, list, evaluate, send, start };
 }
 
 test("loading the module twice registers one card and one panel", () => {
@@ -40,7 +41,8 @@ test("streams the reply and retains the conversation for the next message", asyn
   const requests = [];
   let unsubscribed = 0;
   card._agentId = "conversation.lumo";
-  card._hass = { language: "en", connection: { subscribeMessage: async (onEvent, request) => {
+  card._hass = { language: "en", connection: { subscribeMessage: async (onEvent, request, options) => {
+    assert.equal(options.resubscribe, false);
     requests.push(request);
     onEvent({ delta: "Hel" });
     onEvent({ delta: "lo" });
@@ -55,6 +57,59 @@ test("streams the reply and retains the conversation for the next message", asyn
   assert.equal(requests[1].conversation_id, "cid");
   assert.equal(unsubscribed, 2);
   assert.equal(card._busy, false);
+});
+
+test("Enter sends, Shift+Enter adds a line, and composition does not submit", () => {
+  const { card } = load();
+  let sent = 0, prevented = 0;
+  card._send = () => sent++;
+  const event = { key: "Enter", preventDefault: () => prevented++ };
+  card._handleComposerKeyDown({ ...event, shiftKey: true });
+  card._handleComposerKeyDown({ ...event, isComposing: true });
+  assert.equal(sent, 0);
+  assert.equal(prevented, 0);
+  card._handleComposerKeyDown(event);
+  assert.equal(sent, 1);
+  assert.equal(prevented, 1);
+});
+
+test("send is disabled for empty input and during a reply, while a draft stays editable", () => {
+  const { card, input, send, start } = load();
+  input.value = "  ";
+  card._updateComposer();
+  assert.equal(send.disabled, true);
+  input.value = "Next question";
+  card._updateComposer();
+  assert.equal(send.disabled, false);
+  card._busy = true;
+  card._updateComposer();
+  assert.equal(send.disabled, true);
+  assert.equal(start.disabled, true);
+  assert.equal(input.value, "Next question");
+  assert.notEqual(input.disabled, true);
+});
+
+test("the input grows for multiline text and is capped for a long pasted message", () => {
+  const { card, input } = load();
+  input.scrollHeight = 90;
+  card._resizeInput();
+  assert.equal(input.style.height, "90px");
+  input.scrollHeight = 800;
+  card._resizeInput();
+  assert.equal(input.style.height, "180px");
+});
+
+test("labels follow the Home Assistant language without losing the draft", () => {
+  const { card, input, send } = load();
+  card._loaded = true;
+  card._messages = [{ role: "user", content: "saved" }];
+  card.hass = { language: "hu-HU", connection: {} };
+  assert.equal(input.placeholder, "Írj a Lumónak…");
+  assert.equal(send.title, "Küldés");
+  assert.equal(input.value, "hello");
+  card.hass = { language: "en", connection: {} };
+  assert.equal(send.title, "Send message");
+  assert.equal(input.value, "hello");
 });
 
 test("a failed stream allows another request", async () => {

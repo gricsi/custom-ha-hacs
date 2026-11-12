@@ -51,6 +51,10 @@ in a small DOM harness to check streaming, failed requests, starting over, scrol
 history retries on replacement connections, observer cleanup, and duplicate module loading.
 It does not replace a visual smoke test against a running Home Assistant frontend.
 
+The composer checks also cover multiline resizing, Enter/Shift+Enter and composition input,
+disabled send/new-chat actions while a reply runs, draft preservation, localized labels, and
+disabling automatic resubscription of chat commands.
+
 `test_read_logs.py` — the `read_logs` native function. Both sources (`errors`, `raw`), the filters
 and limits, the character budgets, and the failure modes (no `system_log`, no log file, undecodable
 bytes).

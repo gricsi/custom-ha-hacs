@@ -28,6 +28,11 @@ Either way: no config entry, no async plugin — `asyncio.run()` is enough.
 
 ## What is covered
 
+`test_sdk_initialization.py` starts a fresh Python process for authenticated, anonymous,
+and skipped-authentication startup. It performs real SDK requests against a local mock
+transport and rejects lazy imports, file reads, and subprocess calls on the event loop,
+including the first streamed reply and requests made by copied SDK clients.
+
 CI tests HA 2026.8.0, the latest patch releases in 2026.10 and 2026.11, and current stable.
 It runs weekly as well as on pushes and pull requests. Component dependencies are installed
 under each core's own package constraints. Version-specific tests skip only when the actual

@@ -5,6 +5,11 @@ from __future__ import annotations
 from types import MappingProxyType
 
 import openai
+
+# Resolve the SDK's lazy resource exports while HA imports the integration,
+# before the first config-flow, setup, service, or streaming request runs.
+from openai.resources.chat import AsyncChat  # noqa: F401
+from openai.resources.models import AsyncModels  # noqa: F401
 from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_API_KEY, Platform
@@ -63,6 +68,13 @@ def create_client(hass: HomeAssistant, api_key: str | None, base_url: str | None
     )
 
 
+async def async_create_client(hass: HomeAssistant, api_key: str | None, base_url: str | None) -> openai.AsyncOpenAI:
+    """Prepare SDK platform metadata off the event loop, including when auth is skipped."""
+    client = create_client(hass, api_key, base_url)
+    await hass.async_add_executor_job(client.platform_headers)
+    return client
+
+
 async def async_validate_connection(client: openai.AsyncOpenAI, has_api_key: bool) -> bool:
     """Check the endpoint is usable; return True if the request was authenticated.
 
@@ -108,7 +120,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: LumoConfigEntry) -> bool
     skip_authentication = entry.data.get(CONF_SKIP_AUTHENTICATION, DEFAULT_SKIP_AUTHENTICATION)
 
     api_key = entry.data.get(CONF_API_KEY)
-    client = create_client(hass, api_key, base_url)
+    client = await async_create_client(hass, api_key, base_url)
 
     if not skip_authentication:
         try:

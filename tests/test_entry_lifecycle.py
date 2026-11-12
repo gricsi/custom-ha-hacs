@@ -76,7 +76,7 @@ def test_setup_rejects_silent_anonymous_fallback_and_retries_connection_errors(m
     async def main():
         hass = HomeAssistant(tempfile.mkdtemp())
         try:
-            monkeypatch.setattr(integration, "create_client", lambda *args: object())
+            monkeypatch.setattr(integration, "async_create_client", AsyncMock(return_value=object()))
             probe = AsyncMock(return_value=False)
             expected = ConfigEntryAuthFailed
             if authenticated == "connection_error":
